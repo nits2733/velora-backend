@@ -17,6 +17,11 @@ public class BookingMapper {
                 booking.getProfessional() != null ? booking.getProfessional().getFullName() : null,
                 booking.getPortfolioItem() != null ? booking.getPortfolioItem().getId() : null,
                 booking.getPortfolioItem() != null ? booking.getPortfolioItem().getTitle() : null,
+                booking.getCategory() != null ? booking.getCategory().getId() : null,
+                booking.getCategory() != null ? booking.getCategory().getName() : null,
+                booking.getPreferredStyle(),
+                booking.getBudget(),
+                booking.getLocation(),
                 booking.getScheduledAt(),
                 booking.getStatus(),
                 booking.getNotes(),
@@ -24,3 +29,4 @@ public class BookingMapper {
         );
     }
 }
+
