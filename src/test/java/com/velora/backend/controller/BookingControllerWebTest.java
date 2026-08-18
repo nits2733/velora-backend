@@ -86,7 +86,7 @@ class BookingControllerWebTest {
 
         // If /{id} had won the match, this would have been a failed Long conversion.
         verify(bookingService).getBookingsAwaitingAssignment(any(Pageable.class));
-        verify(bookingService, org.mockito.Mockito.never()).getById(any(), any());
+        verify(bookingService, org.mockito.Mockito.never()).getById(any(), any(), any());
     }
 
     @Test
