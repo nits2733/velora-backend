@@ -153,9 +153,9 @@ public class BookingService {
     }
 
     @Transactional(readOnly = true)
-    public BookingResponse getById(Long userId, Long bookingId) {
+    public BookingResponse getById(Long userId, Role role, Long bookingId) {
         Booking booking = findBooking(bookingId);
-        assertParticipant(userId, booking);
+        assertParticipantOrAdmin(userId, role, booking);
         return bookingMapper.toResponse(booking);
     }
 
@@ -203,7 +203,10 @@ public class BookingService {
         }
     }
 
-    private void assertParticipant(Long userId, Booking booking) {
+    private void assertParticipantOrAdmin(Long userId, Role role, Booking booking) {
+        if (role == Role.ADMIN) {
+            return;
+        }
         boolean isParticipant = booking.getCustomer().getId().equals(userId)
                 || (booking.getProfessional() != null && booking.getProfessional().getId().equals(userId));
         if (!isParticipant) {
