@@ -81,7 +81,7 @@ public class BookingController {
     @Operation(summary = "Get a single booking's details")
     public ResponseEntity<BookingResponse> getById(@AuthenticationPrincipal UserPrincipal principal,
                                                     @PathVariable Long id) {
-        return ResponseEntity.ok(bookingService.getById(principal.getId(), id));
+        return ResponseEntity.ok(bookingService.getById(principal.getId(), principal.getRole(), id));
     }
 
     @PatchMapping("/{id}/cancel")
