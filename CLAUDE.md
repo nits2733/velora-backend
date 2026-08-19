@@ -71,7 +71,7 @@ Full endpoint list and module table: README.md. Deeper per-layer walkthrough + f
 
 - Business logic and state-transition rules belong in `service/`, never in controllers or mappers.
 - Cross-field/request-shape validation that bean validation can't express (e.g. "individual service requests must specify a category") belongs in the service method, thrown as `IllegalArgumentException`.
-- Repositories stay derived-method/`Specification` only — if a query needs `@Query`/native SQL, that's a signal to reconsider the approach, not add one.
+- Repositories stay derived-method/`Specification` only — if a query needs `@Query`/native SQL, that's a signal to reconsider the approach, not add one. Exception: bulk-update statements that can't be expressed as a derived method (see `RefreshTokenRepository.revokeAllForUser`, `PasswordResetTokenRepository.invalidateOutstandingForUser`).
 - Controllers: route mapping, `@PreAuthorize`, `@Valid`, pull `principal.getId()`/`getRole()` from `@AuthenticationPrincipal UserPrincipal`, delegate everything else to the service.
 - New Flyway migrations only — never edit an applied `V*` file, even to fix a mistake in it (see V6 and V10, which exist purely to correct earlier migrations).
 - When adding an optional per-trade or per-role attribute set, prefer the satellite-entity pattern already used twice over widening a shared table or adding a JSON blob.
@@ -81,7 +81,7 @@ Full endpoint list and module table: README.md. Deeper per-layer walkthrough + f
 - Controllers stay thin — no business logic, no direct repository access.
 - Business logic only in services; services are the only `@Transactional` boundary.
 - Never expose JPA entities directly in the API — DTOs both directions.
-- Repositories: zero `@Query`/native SQL, Spring Data derived methods and `Specification` only.
+- Repositories: derived methods and `Specification` only for reads; `@Query` reserved for bulk-update statements that have no derived-method equivalent (existing precedent: `RefreshTokenRepository`, `PasswordResetTokenRepository`) — never native SQL.
 - Flyway migrations are append-only; `ddl-auto` is `validate`, never rely on Hibernate auto-DDL.
 - Every exception surfaces through `GlobalExceptionHandler`/`RestSecurityErrorHandler` into the one `ApiErrorResponse` shape — no ad hoc error bodies from controllers.
 
