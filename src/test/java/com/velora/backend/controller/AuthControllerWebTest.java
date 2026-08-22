@@ -44,6 +44,9 @@ class AuthControllerWebTest {
     @MockBean
     private PasswordService passwordService;
 
+    @MockBean
+    private com.velora.backend.service.RateLimiterService rateLimiterService;
+
     @Test
     void registrationIsReachableWithoutAToken() throws Exception {
         when(authService.register(any(RegisterRequest.class)))
@@ -211,6 +214,47 @@ class AuthControllerWebTest {
                 .andExpect(jsonPath("$.fieldErrors[0].field").value("newPassword"));
 
         verifyNoInteractions(passwordService);
+    }
+
+    @Test
+    void forgotPasswordAliasIsAcceptedForAnyEmail() throws Exception {
+        mockMvc.perform(post("/api/auth/forgot-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"email":"user@velora.test"}
+                                """))
+                .andExpect(status().isAccepted());
+
+        org.mockito.Mockito.verify(passwordService).requestReset("user@velora.test");
+    }
+
+    @Test
+    void forgotPasswordRateLimitExceededReturns429() throws Exception {
+        org.mockito.Mockito.doThrow(new com.velora.backend.exception.RateLimitExceededException("Too many password reset requests"))
+                .when(rateLimiterService).checkForgotPasswordRateLimit(any());
+
+        mockMvc.perform(post("/api/auth/forgot-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"email":"user@velora.test"}
+                                """))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.status").value(429))
+                .andExpect(jsonPath("$.message").value("Too many password reset requests"));
+
+        verifyNoInteractions(passwordService);
+    }
+
+    @Test
+    void resetPasswordAliasWorksAndCallsService() throws Exception {
+        mockMvc.perform(post("/api/auth/reset-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"token":"reset-token-123","newPassword":"newPassword123"}
+                                """))
+                .andExpect(status().isNoContent());
+
+        org.mockito.Mockito.verify(passwordService).resetPassword("reset-token-123", "newPassword123");
     }
 
     @Test

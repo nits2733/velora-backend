@@ -30,6 +30,7 @@ public class AuthController {
 
     private final AuthService authService;
     private final PasswordService passwordService;
+    private final com.velora.backend.service.RateLimiterService rateLimiterService;
 
     @PostMapping("/register")
     @Operation(summary = "Register a new customer or professional account")
@@ -64,18 +65,29 @@ public class AuthController {
         return ResponseEntity.noContent().build();
     }
 
-    @PostMapping("/password/forgot")
+    @PostMapping({"/password/forgot", "/forgot-password"})
     @Operation(summary = "Request a password reset token (always succeeds, even for unknown emails)")
-    public ResponseEntity<Void> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+    public ResponseEntity<Void> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request,
+                                               jakarta.servlet.http.HttpServletRequest httpRequest) {
+        String clientIp = extractClientIp(httpRequest);
+        rateLimiterService.checkForgotPasswordRateLimit(clientIp);
         passwordService.requestReset(request.email());
         return ResponseEntity.accepted().build();
     }
 
-    @PostMapping("/password/reset")
+    @PostMapping({"/password/reset", "/reset-password"})
     @Operation(summary = "Set a new password using a reset token (revokes all sessions)")
     public ResponseEntity<Void> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
         passwordService.resetPassword(request.token(), request.newPassword());
         return ResponseEntity.noContent().build();
+    }
+
+    private String extractClientIp(jakarta.servlet.http.HttpServletRequest request) {
+        String xForwardedFor = request.getHeader("X-Forwarded-For");
+        if (xForwardedFor != null && !xForwardedFor.isBlank()) {
+            return xForwardedFor.split(",")[0].trim();
+        }
+        return request.getRemoteAddr() != null ? request.getRemoteAddr() : "unknown";
     }
 
     @PostMapping("/password/change")
