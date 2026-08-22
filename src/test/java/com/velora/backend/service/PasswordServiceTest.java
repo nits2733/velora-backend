@@ -93,6 +93,17 @@ class PasswordServiceTest {
     }
 
     @Test
+    void requestingAResetThrowsWhenEmailDeliveryFails() {
+        when(userRepository.findByEmail("user@velora.test")).thenReturn(Optional.of(user));
+        org.mockito.Mockito.doThrow(new RuntimeException("Resend API down"))
+                .when(passwordResetNotifier).sendResetToken(eq(user), any(String.class));
+
+        assertThatThrownBy(() -> passwordService.requestReset("user@velora.test"))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("Resend API down");
+    }
+
+    @Test
     void requestingAResetInvalidatesAnyEarlierOutstandingOne() {
         when(userRepository.findByEmail("user@velora.test")).thenReturn(Optional.of(user));
 
