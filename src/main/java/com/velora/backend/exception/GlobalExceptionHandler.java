@@ -112,6 +112,22 @@ public class GlobalExceptionHandler {
         return required != null ? "Must be a valid " + required.getSimpleName() : "Invalid value";
     }
 
+    @ExceptionHandler(RateLimitExceededException.class)
+    public ResponseEntity<ApiErrorResponse> handleRateLimitExceeded(RateLimitExceededException ex, HttpServletRequest req) {
+        return build(HttpStatus.TOO_MANY_REQUESTS, ex.getMessage(), req, null);
+    }
+
+    @ExceptionHandler(MediaUploadException.class)
+    public ResponseEntity<ApiErrorResponse> handleMediaUpload(MediaUploadException ex, HttpServletRequest req) {
+        return build(HttpStatus.BAD_REQUEST, ex.getMessage(), req, null);
+    }
+
+    @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiErrorResponse> handleMaxUploadSize(org.springframework.web.multipart.MaxUploadSizeExceededException ex,
+                                                                HttpServletRequest req) {
+        return build(HttpStatus.BAD_REQUEST, "Uploaded file exceeds the maximum allowed size limit (10MB)", req, null);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiErrorResponse> handleGeneric(Exception ex, HttpServletRequest req) {
         return build(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred", req, null);

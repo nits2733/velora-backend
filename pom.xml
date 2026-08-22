@@ -92,6 +92,20 @@
             <version>${springdoc.version}</version>
         </dependency>
 
+        <!-- Resend Email SDK -->
+        <dependency>
+            <groupId>com.resend</groupId>
+            <artifactId>resend-java</artifactId>
+            <version>4.1.1</version>
+        </dependency>
+
+        <!-- Cloudinary Media SDK -->
+        <dependency>
+            <groupId>com.cloudinary</groupId>
+            <artifactId>cloudinary-http45</artifactId>
+            <version>1.39.0</version>
+        </dependency>
+
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
