@@ -2,7 +2,11 @@ package com.velora.backend.service;
 
 import com.velora.backend.config.JwtProperties;
 import com.velora.backend.dto.auth.AuthResponse;
+import com.velora.backend.dto.auth.LoginRequest;
+import com.velora.backend.dto.auth.OtpResponse;
 import com.velora.backend.dto.auth.RegisterRequest;
+import com.velora.backend.dto.auth.VerifyOtpRequest;
+import com.velora.backend.entity.OtpPurpose;
 import com.velora.backend.entity.Role;
 import com.velora.backend.entity.User;
 import com.velora.backend.exception.DuplicateResourceException;
@@ -12,15 +16,18 @@ import com.velora.backend.security.JwtService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
+import java.util.Optional;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -34,6 +41,8 @@ class AuthServiceTest {
     private AuthenticationManager authenticationManager;
     @Mock
     private RefreshTokenService refreshTokenService;
+    @Mock
+    private OtpService otpService;
 
     private AuthService authService;
 
@@ -46,7 +55,7 @@ class AuthServiceTest {
         JwtService jwtService = new JwtService(properties);
 
         authService = new AuthService(userRepository, professionalProfileRepository,
-                new BCryptPasswordEncoder(), jwtService, authenticationManager, refreshTokenService);
+                new BCryptPasswordEncoder(), jwtService, authenticationManager, refreshTokenService, otpService);
     }
 
     @Test
@@ -106,21 +115,28 @@ class AuthServiceTest {
     }
 
     @Test
-    void registeringIssuesARefreshTokenAlongsideTheAccessToken() {
-        when(userRepository.existsByEmail("new@velora.test")).thenReturn(false);
-        when(userRepository.save(any(User.class))).thenAnswer(inv -> {
-            User u = inv.getArgument(0);
-            u.setId(42L);
-            return u;
-        });
-        when(refreshTokenService.issue(any(User.class))).thenReturn("refresh-abc");
+    void loginDispatchesOtpAndReturnsRequiresOtpResponse() {
+        User user = User.builder().id(42L).email("user@velora.test").fullName("User").role(Role.CUSTOMER).build();
+        when(userRepository.findByEmail("user@velora.test")).thenReturn(Optional.of(user));
 
-        AuthResponse response = authService.register(
-                new RegisterRequest("new@velora.test", "password1", "New Customer", null, Role.CUSTOMER));
+        OtpResponse response = authService.login(new LoginRequest("user@velora.test", "Password@123"));
+
+        assertThat(response.requiresOtp()).isTrue();
+        assertThat(response.message()).contains("OTP sent");
+        verify(otpService).generateAndSendOtp("user@velora.test", OtpPurpose.LOGIN);
+    }
+
+    @Test
+    void verifyLoginOtpIssuesTokensOnValidOtp() {
+        User user = User.builder().id(42L).email("user@velora.test").fullName("User").role(Role.CUSTOMER).build();
+        when(userRepository.findByEmail("user@velora.test")).thenReturn(Optional.of(user));
+        when(refreshTokenService.issue(user)).thenReturn("refresh-token-123");
+
+        AuthResponse response = authService.verifyLoginOtp(new VerifyOtpRequest("user@velora.test", "123456"));
 
         assertThat(response.accessToken()).isNotBlank();
-        assertThat(response.refreshToken()).isEqualTo("refresh-abc");
-        assertThat(response.tokenType()).isEqualTo("Bearer");
+        assertThat(response.refreshToken()).isEqualTo("refresh-token-123");
+        verify(otpService).verifyOtp("user@velora.test", "123456", OtpPurpose.LOGIN);
     }
 
     @Test

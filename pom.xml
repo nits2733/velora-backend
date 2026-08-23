@@ -92,11 +92,10 @@
             <version>${springdoc.version}</version>
         </dependency>
 
-        <!-- Resend Email SDK -->
+        <!-- Spring Boot Mail (Brevo SMTP) -->
         <dependency>
-            <groupId>com.resend</groupId>
-            <artifactId>resend-java</artifactId>
-            <version>4.1.1</version>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
         </dependency>
 
         <!-- Cloudinary Media SDK -->

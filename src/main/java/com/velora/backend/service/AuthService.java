@@ -2,11 +2,15 @@ package com.velora.backend.service;
 
 import com.velora.backend.dto.auth.AuthResponse;
 import com.velora.backend.dto.auth.LoginRequest;
+import com.velora.backend.dto.auth.OtpResponse;
 import com.velora.backend.dto.auth.RegisterRequest;
+import com.velora.backend.dto.auth.VerifyOtpRequest;
+import com.velora.backend.entity.OtpPurpose;
 import com.velora.backend.entity.ProfessionalProfile;
 import com.velora.backend.entity.Role;
 import com.velora.backend.entity.User;
 import com.velora.backend.exception.DuplicateResourceException;
+import com.velora.backend.exception.UserNotFoundException;
 import com.velora.backend.repository.ProfessionalProfileRepository;
 import com.velora.backend.repository.UserRepository;
 import com.velora.backend.security.JwtService;
@@ -28,6 +32,7 @@ public class AuthService {
     private final JwtService jwtService;
     private final AuthenticationManager authenticationManager;
     private final RefreshTokenService refreshTokenService;
+    private final OtpService otpService;
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
@@ -61,22 +66,39 @@ public class AuthService {
         return issueSession(user);
     }
 
-    public AuthResponse login(LoginRequest request) {
+    /**
+     * Authenticates email and password, then triggers 2FA email OTP.
+     */
+    public OtpResponse login(LoginRequest request) {
         String normalizedEmail = request.email().trim().toLowerCase();
 
         authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(normalizedEmail, request.password()));
 
+        userRepository.findByEmail(normalizedEmail)
+                .orElseThrow(() -> new UserNotFoundException("Invalid email or password"));
+
+        otpService.generateAndSendOtp(normalizedEmail, OtpPurpose.LOGIN);
+        return new OtpResponse("OTP sent to your email", true);
+    }
+
+    /**
+     * Verifies login OTP and issues access token + refresh token session.
+     */
+    @Transactional
+    public AuthResponse verifyLoginOtp(VerifyOtpRequest request) {
+        String normalizedEmail = request.email().trim().toLowerCase();
+
+        otpService.verifyOtp(normalizedEmail, request.otp(), OtpPurpose.LOGIN);
+
         User user = userRepository.findByEmail(normalizedEmail)
-                .orElseThrow(() -> new IllegalStateException("User authenticated but not found: " + normalizedEmail));
+                .orElseThrow(() -> new UserNotFoundException("Invalid email or password"));
 
         return issueSession(user);
     }
 
     /**
-     * Trades a refresh token for a new pair. The user is reloaded through the refresh
-     * token's own row, so a deleted account or a changed role takes effect at the next
-     * refresh rather than whenever the access token happens to expire.
+     * Trades a refresh token for a new pair.
      */
     @Transactional
     public AuthResponse refresh(String refreshToken) {
@@ -84,13 +106,13 @@ public class AuthService {
         return issueSession(user);
     }
 
-    /** Ends one session. Idempotent: an unknown or already-revoked token is still a success. */
+    /** Ends one session. */
     @Transactional
     public void logout(String refreshToken) {
         refreshTokenService.revoke(refreshToken);
     }
 
-    /** Ends every session for this user - the "log out on all my devices" case. */
+    /** Ends every session for this user. */
     @Transactional
     public void logoutEverywhere(Long userId) {
         refreshTokenService.revokeAllForUser(userId);

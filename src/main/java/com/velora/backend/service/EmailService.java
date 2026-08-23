@@ -1,5 +1,7 @@
 package com.velora.backend.service;
 
+import com.velora.backend.entity.OtpPurpose;
+
 public interface EmailService {
-    void sendEmail(String to, String subject, String htmlBody, String textBody);
+    void sendOtpEmail(String toEmail, String otp, OtpPurpose purpose);
 }

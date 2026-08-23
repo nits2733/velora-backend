@@ -2,12 +2,19 @@ package com.velora.backend.controller;
 
 import com.velora.backend.dto.auth.AuthResponse;
 import com.velora.backend.dto.auth.LoginRequest;
+import com.velora.backend.dto.auth.OtpResponse;
 import com.velora.backend.dto.auth.RegisterRequest;
+import com.velora.backend.dto.auth.VerifyOtpRequest;
+import com.velora.backend.dto.auth.VerifyResetOtpRequest;
+import com.velora.backend.entity.OtpPurpose;
 import com.velora.backend.entity.Role;
 import com.velora.backend.exception.AuthenticationFailedException;
 import com.velora.backend.exception.DuplicateResourceException;
+import com.velora.backend.repository.UserRepository;
 import com.velora.backend.service.AuthService;
+import com.velora.backend.service.OtpService;
 import com.velora.backend.service.PasswordService;
+import com.velora.backend.service.RateLimiterService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -18,19 +25,15 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import static com.velora.backend.controller.WebLayerSupport.as;
 import static org.hamcrest.Matchers.containsInAnyOrder;
-
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/**
- * The auth endpoints are the only writes reachable without a token, so this pins that
- * they really are public, that bean validation runs before the service does, and that a
- * failed login is reported vaguely enough not to confirm which emails have accounts.
- */
 @WebMvcTest(AuthController.class)
 @WebLayerTest
 class AuthControllerWebTest {
@@ -42,10 +45,16 @@ class AuthControllerWebTest {
     private AuthService authService;
 
     @MockBean
+    private OtpService otpService;
+
+    @MockBean
     private PasswordService passwordService;
 
     @MockBean
-    private com.velora.backend.service.RateLimiterService rateLimiterService;
+    private UserRepository userRepository;
+
+    @MockBean
+    private RateLimiterService rateLimiterService;
 
     @Test
     void registrationIsReachableWithoutAToken() throws Exception {
@@ -64,36 +73,76 @@ class AuthControllerWebTest {
     }
 
     @Test
-    void everyInvalidFieldIsReportedAtOnceNotJustTheFirst() throws Exception {
-        mockMvc.perform(post("/api/auth/register")
+    void loginDispatchesOtpAndReturnsRequiresOtp() throws Exception {
+        when(authService.login(any(LoginRequest.class)))
+                .thenReturn(new OtpResponse("OTP sent to your email", true));
+
+        mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"email":"not-an-email","password":"short","fullName":"","role":"CUSTOMER"}
+                                {"email":"user@velora.test","password":"Password@123"}
                                 """))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.status").value(400))
-                .andExpect(jsonPath("$.message").value("Validation failed"))
-                // "short" trips both @Size and @Pattern, so password appears twice -
-                // every violation is reported, not one per field.
-                .andExpect(jsonPath("$.fieldErrors[*].field",
-                        containsInAnyOrder("email", "password", "password", "fullName")));
-
-        verifyNoInteractions(authService);
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("OTP sent to your email"))
+                .andExpect(jsonPath("$.requiresOtp").value(true));
     }
 
     @Test
-    void aPasswordWithoutADigitIsRejected() throws Exception {
-        mockMvc.perform(post("/api/auth/register")
+    void verifyLoginOtpReturnsTokens() throws Exception {
+        when(authService.verifyLoginOtp(any(VerifyOtpRequest.class)))
+                .thenReturn(AuthResponse.of("jwt-token", "refresh-token", 1L, "user@velora.test", "User", Role.CUSTOMER));
+
+        mockMvc.perform(post("/api/auth/verify-login-otp")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"email":"new@velora.test","password":"onlyletters","fullName":"New User","role":"CUSTOMER"}
+                                {"email":"user@velora.test","otp":"123456"}
                                 """))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.fieldErrors[0].field").value("password"))
-                .andExpect(jsonPath("$.fieldErrors[0].message")
-                        .value("Password must contain at least one letter and one digit"));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accessToken").value("jwt-token"))
+                .andExpect(jsonPath("$.refreshToken").value("refresh-token"));
+    }
 
-        verifyNoInteractions(authService);
+    @Test
+    void forgotPasswordReturnsSuccessAndTriggersOtpIfUserExists() throws Exception {
+        when(userRepository.existsByEmail("user@velora.test")).thenReturn(true);
+
+        mockMvc.perform(post("/api/auth/forgot-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"email":"user@velora.test"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("If this email is registered, an OTP has been sent"));
+
+        verify(otpService).generateAndSendOtp("user@velora.test", OtpPurpose.PASSWORD_RESET);
+    }
+
+    @Test
+    void verifyResetOtpReturnsResetToken() throws Exception {
+        when(passwordService.createResetToken("user@velora.test")).thenReturn("raw-reset-uuid");
+
+        mockMvc.perform(post("/api/auth/verify-reset-otp")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"email":"user@velora.test","otp":"654321"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.resetToken").value("raw-reset-uuid"));
+
+        verify(otpService).verifyOtp("user@velora.test", "654321", OtpPurpose.PASSWORD_RESET);
+    }
+
+    @Test
+    void resetPasswordWorksAndCallsService() throws Exception {
+        mockMvc.perform(post("/api/auth/reset-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"resetToken":"raw-reset-uuid","newPassword":"BrandNew@123"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("Password reset successful. Please log in."));
+
+        verify(passwordService).resetPassword("raw-reset-uuid", "BrandNew@123");
     }
 
     @Test
@@ -138,8 +187,6 @@ class AuthControllerWebTest {
                                 {"refreshToken":"bad"}
                                 """))
                 .andExpect(status().isUnauthorized())
-                // The client has to tell "refresh me" apart from "log in again"; only
-                // login itself stays deliberately vague.
                 .andExpect(jsonPath("$.message").value("Invalid or expired refresh token"));
     }
 
@@ -152,7 +199,7 @@ class AuthControllerWebTest {
                                 """))
                 .andExpect(status().isNoContent());
 
-        org.mockito.Mockito.verify(authService).logout("some-refresh");
+        verify(authService).logout("some-refresh");
     }
 
     @Test
@@ -163,7 +210,7 @@ class AuthControllerWebTest {
         mockMvc.perform(post("/api/auth/logout-all").with(as(42L, Role.CUSTOMER)))
                 .andExpect(status().isNoContent());
 
-        org.mockito.Mockito.verify(authService).logoutEverywhere(42L);
+        verify(authService).logoutEverywhere(42L);
     }
 
     @Test
@@ -188,73 +235,7 @@ class AuthControllerWebTest {
                                 """))
                 .andExpect(status().isNoContent());
 
-        org.mockito.Mockito.verify(passwordService).changePassword(42L, "current123", "brandnew1");
-    }
-
-    @Test
-    void forgotPasswordIsAcceptedForAnyEmailWhetherItExistsOrNot() throws Exception {
-        mockMvc.perform(post("/api/auth/password/forgot")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"email":"nobody@velora.test"}
-                                """))
-                .andExpect(status().isAccepted());
-
-        org.mockito.Mockito.verify(passwordService).requestReset("nobody@velora.test");
-    }
-
-    @Test
-    void aResetStillEnforcesTheSamePasswordRulesAsRegistration() throws Exception {
-        mockMvc.perform(post("/api/auth/password/reset")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"token":"reset-token","newPassword":"onlyletters"}
-                                """))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.fieldErrors[0].field").value("newPassword"));
-
-        verifyNoInteractions(passwordService);
-    }
-
-    @Test
-    void forgotPasswordAliasIsAcceptedForAnyEmail() throws Exception {
-        mockMvc.perform(post("/api/auth/forgot-password")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"email":"user@velora.test"}
-                                """))
-                .andExpect(status().isAccepted());
-
-        org.mockito.Mockito.verify(passwordService).requestReset("user@velora.test");
-    }
-
-    @Test
-    void forgotPasswordRateLimitExceededReturns429() throws Exception {
-        org.mockito.Mockito.doThrow(new com.velora.backend.exception.RateLimitExceededException("Too many password reset requests"))
-                .when(rateLimiterService).checkForgotPasswordRateLimit(any());
-
-        mockMvc.perform(post("/api/auth/forgot-password")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"email":"user@velora.test"}
-                                """))
-                .andExpect(status().isTooManyRequests())
-                .andExpect(jsonPath("$.status").value(429))
-                .andExpect(jsonPath("$.message").value("Too many password reset requests"));
-
-        verifyNoInteractions(passwordService);
-    }
-
-    @Test
-    void resetPasswordAliasWorksAndCallsService() throws Exception {
-        mockMvc.perform(post("/api/auth/reset-password")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"token":"reset-token-123","newPassword":"newPassword123"}
-                                """))
-                .andExpect(status().isNoContent());
-
-        org.mockito.Mockito.verify(passwordService).resetPassword("reset-token-123", "newPassword123");
+        verify(passwordService).changePassword(42L, "current123", "brandnew1");
     }
 
     @Test

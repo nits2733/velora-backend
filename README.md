@@ -82,6 +82,16 @@ At minimum set:
 | `DB_URL` | e.g. `jdbc:postgresql://<your-neon-host>/<dbname>?sslmode=require` |
 | `DB_USERNAME` / `DB_PASSWORD` | From your Postgres provider |
 | `JWT_SECRET` | 32+ bytes; generate with `openssl rand -base64 48` |
+| `BREVO_EMAIL` | Your Brevo (Sendinblue) account email |
+| `BREVO_SMTP_KEY` | SMTP key generated from Brevo Dashboard (Settings → SMTP & API) |
+| `CLOUDINARY_URL` | Cloudinary asset management connection string |
+
+> 📧 **Brevo SMTP Setup (Email OTP & 2FA)**:
+> 1. Sign up at [brevo.com](https://brevo.com) (Free plan includes 300 emails/day, no domain verification required for testing).
+> 2. Navigate to **Settings → SMTP & API → SMTP tab → Generate SMTP Key**.
+> 3. Set `BREVO_EMAIL` to your login email and `BREVO_SMTP_KEY` to the generated key (NOT your account password).
+> 4. For production, verify your sending domain in the Brevo dashboard to avoid spam filters.
+> 5. HTTPS is mandatory in production to protect credentials and OTP transmission.
 
 > ⚠️ The app **fails fast at startup** if `JWT_SECRET` is missing or too short — this
 > is intentional, it must never default silently in a real deployment. `.env` is

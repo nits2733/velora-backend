@@ -13,10 +13,12 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
+import lombok.extern.slf4j.Slf4j;
 import java.time.Instant;
 import java.util.List;
 
 @RestControllerAdvice
+@Slf4j
 public class GlobalExceptionHandler {
 
     @ExceptionHandler(ResourceNotFoundException.class)
@@ -112,6 +114,41 @@ public class GlobalExceptionHandler {
         return required != null ? "Must be a valid " + required.getSimpleName() : "Invalid value";
     }
 
+    @ExceptionHandler(InvalidOtpException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidOtp(InvalidOtpException ex, HttpServletRequest req) {
+        return build(HttpStatus.BAD_REQUEST, ex.getMessage(), req, null);
+    }
+
+    @ExceptionHandler(OtpExpiredException.class)
+    public ResponseEntity<ApiErrorResponse> handleOtpExpired(OtpExpiredException ex, HttpServletRequest req) {
+        return build(HttpStatus.BAD_REQUEST, ex.getMessage(), req, null);
+    }
+
+    @ExceptionHandler(MaxOtpAttemptsException.class)
+    public ResponseEntity<ApiErrorResponse> handleMaxOtpAttempts(MaxOtpAttemptsException ex, HttpServletRequest req) {
+        return build(HttpStatus.TOO_MANY_REQUESTS, ex.getMessage(), req, null);
+    }
+
+    @ExceptionHandler(ResendCooldownException.class)
+    public ResponseEntity<ApiErrorResponse> handleResendCooldown(ResendCooldownException ex, HttpServletRequest req) {
+        return build(HttpStatus.TOO_MANY_REQUESTS, ex.getMessage(), req, null);
+    }
+
+    @ExceptionHandler(EmailSendException.class)
+    public ResponseEntity<ApiErrorResponse> handleEmailSend(EmailSendException ex, HttpServletRequest req) {
+        return build(HttpStatus.BAD_GATEWAY, ex.getMessage(), req, null);
+    }
+
+    @ExceptionHandler(InvalidResetTokenException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidResetToken(InvalidResetTokenException ex, HttpServletRequest req) {
+        return build(HttpStatus.BAD_REQUEST, ex.getMessage(), req, null);
+    }
+
+    @ExceptionHandler(UserNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleUserNotFound(UserNotFoundException ex, HttpServletRequest req) {
+        return build(HttpStatus.UNAUTHORIZED, "Invalid email or password", req, null);
+    }
+
     @ExceptionHandler(RateLimitExceededException.class)
     public ResponseEntity<ApiErrorResponse> handleRateLimitExceeded(RateLimitExceededException ex, HttpServletRequest req) {
         return build(HttpStatus.TOO_MANY_REQUESTS, ex.getMessage(), req, null);
@@ -130,6 +167,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiErrorResponse> handleGeneric(Exception ex, HttpServletRequest req) {
+        log.error("Unhandled server exception at URI: {}", req.getRequestURI(), ex);
         return build(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred", req, null);
     }
 

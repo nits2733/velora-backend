@@ -5,6 +5,7 @@ import com.velora.backend.security.UserPrincipal;
 import com.velora.backend.service.MediaUploadService;
 import com.velora.backend.service.RateLimiterService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +24,7 @@ import org.springframework.web.multipart.MultipartFile;
 @RequestMapping("/api/media")
 @RequiredArgsConstructor
 @Tag(name = "Media", description = "Secure media asset upload and management")
+@SecurityRequirement(name = "bearerAuth")
 public class MediaUploadController {
 
     private final MediaUploadService mediaUploadService;
@@ -30,7 +32,7 @@ public class MediaUploadController {
 
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("isAuthenticated()")
-    @Operation(summary = "Upload an image (JPEG, PNG, WebP) to cloud storage (rate-limited)")
+    @Operation(summary = "Upload an image (JPEG, PNG, WebP) to cloud storage (rate-limited)", security = @SecurityRequirement(name = "bearerAuth"))
     public ResponseEntity<MediaUploadResponse> upload(
             @AuthenticationPrincipal UserPrincipal principal,
             @RequestParam("file") MultipartFile file,

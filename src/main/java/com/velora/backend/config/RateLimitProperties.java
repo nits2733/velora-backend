@@ -18,4 +18,7 @@ public class RateLimitProperties {
 
     private int mediaUploadCapacity = 20;
     private Duration mediaUploadDuration = Duration.ofHours(1);
+
+    private int otpVerifyCapacity = 10;
+    private Duration otpVerifyDuration = Duration.ofMinutes(1);
 }
