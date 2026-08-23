@@ -35,7 +35,8 @@ class CloudinaryMediaServiceTest {
 
     @BeforeEach
     void setUp() {
-        mediaService = new CloudinaryMediaService(cloudinary);
+        com.velora.backend.config.MediaUploadProperties properties = new com.velora.backend.config.MediaUploadProperties();
+        mediaService = new CloudinaryMediaService(cloudinary, properties);
     }
 
     @Test

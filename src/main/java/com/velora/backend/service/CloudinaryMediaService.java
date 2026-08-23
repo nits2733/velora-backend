@@ -18,15 +18,8 @@ import java.util.Set;
 @Slf4j
 public class CloudinaryMediaService implements MediaUploadService {
 
-    private static final long MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
-    private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of(
-            "image/jpeg",
-            "image/jpg",
-            "image/png",
-            "image/webp"
-    );
-
     private final Cloudinary cloudinary;
+    private final com.velora.backend.config.MediaUploadProperties mediaUploadProperties;
 
     @Override
     public MediaUploadResponse uploadImage(MultipartFile file, String folder) {
@@ -73,12 +66,13 @@ public class CloudinaryMediaService implements MediaUploadService {
             throw new MediaUploadException("Please select a valid non-empty file to upload");
         }
 
-        if (file.getSize() > MAX_FILE_SIZE) {
-            throw new MediaUploadException("File size (" + (file.getSize() / (1024 * 1024)) + "MB) exceeds maximum permitted limit of 10MB");
+        if (file.getSize() > mediaUploadProperties.getMaxFileSize()) {
+            long maxMb = mediaUploadProperties.getMaxFileSize() / (1024 * 1024);
+            throw new MediaUploadException("File size (" + (file.getSize() / (1024 * 1024)) + "MB) exceeds maximum permitted limit of " + maxMb + "MB");
         }
 
         String contentType = file.getContentType();
-        if (contentType == null || !ALLOWED_CONTENT_TYPES.contains(contentType.toLowerCase())) {
+        if (contentType == null || !mediaUploadProperties.getAllowedContentTypes().contains(contentType.toLowerCase())) {
             throw new MediaUploadException("Invalid file type '" + contentType + "'. Only JPEG, PNG, and WebP images are allowed.");
         }
     }

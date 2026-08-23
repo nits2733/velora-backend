@@ -14,16 +14,24 @@ public class CloudinaryConfig {
     @Value("${app.cloudinary.url:}")
     private String cloudinaryUrl;
 
+    @Value("${app.cloudinary.cloud-name}")
+    private String cloudName;
+
+    @Value("${app.cloudinary.api-key}")
+    private String apiKey;
+
+    @Value("${app.cloudinary.api-secret}")
+    private String apiSecret;
+
     @Bean
     public Cloudinary cloudinary() {
         if (cloudinaryUrl != null && !cloudinaryUrl.isBlank()) {
             return new Cloudinary(cloudinaryUrl);
         }
-        // Fallback default for local dev/testing where mock is used
         Map<String, String> config = new HashMap<>();
-        config.put("cloud_name", "velora-dev");
-        config.put("api_key", "mock-key");
-        config.put("api_secret", "mock-secret");
+        config.put("cloud_name", cloudName);
+        config.put("api_key", apiKey);
+        config.put("api_secret", apiSecret);
         return new Cloudinary(config);
     }
 }

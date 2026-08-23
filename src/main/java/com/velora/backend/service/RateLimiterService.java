@@ -13,26 +13,28 @@ import java.util.concurrent.ConcurrentHashMap;
  * endpoints (such as password recovery and media uploads) against abuse.
  */
 @Service
+@lombok.RequiredArgsConstructor
 public class RateLimiterService {
 
+    private final com.velora.backend.config.RateLimitProperties rateLimitProperties;
     private final Map<String, TokenBucket> buckets = new ConcurrentHashMap<>();
 
     /**
-     * Rate limit for forgot password: max 5 requests per 15 minutes per IP.
+     * Rate limit for forgot password: max requests per duration per IP.
      */
     public void checkForgotPasswordRateLimit(String clientIp) {
         String key = "forgot-password:" + clientIp;
-        if (!tryAcquire(key, 5, Duration.ofMinutes(15))) {
+        if (!tryAcquire(key, rateLimitProperties.getForgotPasswordCapacity(), rateLimitProperties.getForgotPasswordDuration())) {
             throw new RateLimitExceededException("Too many password reset requests. Please wait a few minutes before trying again.");
         }
     }
 
     /**
-     * Rate limit for media uploads: max 20 uploads per hour per user/IP.
+     * Rate limit for media uploads: max uploads per duration per user/IP.
      */
     public void checkMediaUploadRateLimit(String clientIdentifier) {
         String key = "media-upload:" + clientIdentifier;
-        if (!tryAcquire(key, 20, Duration.ofHours(1))) {
+        if (!tryAcquire(key, rateLimitProperties.getMediaUploadCapacity(), rateLimitProperties.getMediaUploadDuration())) {
             throw new RateLimitExceededException("Upload limit exceeded. Please wait before uploading more files.");
         }
     }

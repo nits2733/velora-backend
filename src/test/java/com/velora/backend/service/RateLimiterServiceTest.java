@@ -16,7 +16,8 @@ class RateLimiterServiceTest {
 
     @BeforeEach
     void setUp() {
-        rateLimiterService = new RateLimiterService();
+        com.velora.backend.config.RateLimitProperties properties = new com.velora.backend.config.RateLimitProperties();
+        rateLimiterService = new RateLimiterService(properties);
         rateLimiterService.clear();
     }
 
