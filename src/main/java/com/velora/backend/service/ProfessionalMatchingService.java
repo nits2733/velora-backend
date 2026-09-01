@@ -130,7 +130,8 @@ public class ProfessionalMatchingService {
     }
 
     private int budgetScore(Long professionalId, Booking booking) {
-        if (booking.getBudget() == null) {
+        BigDecimal budget = booking.getBudgetMax() != null ? booking.getBudgetMax() : booking.getBudgetMin();
+        if (budget == null) {
             return 0;
         }
         List<PortfolioItem> items = portfolioItemRepository.findByProfessionalId(professionalId);
@@ -146,7 +147,7 @@ public class ProfessionalMatchingService {
         BigDecimal average = prices.stream().reduce(BigDecimal.ZERO, BigDecimal::add)
                 .divide(new BigDecimal(prices.size()), 2, RoundingMode.HALF_UP);
         BigDecimal affordableThreshold = average.multiply(BUDGET_FIT_RATIO);
-        return booking.getBudget().compareTo(affordableThreshold) >= 0 ? 5 : 0;
+        return budget.compareTo(affordableThreshold) >= 0 ? 5 : 0;
     }
 
     private long activeBookingCount(Long professionalId) {

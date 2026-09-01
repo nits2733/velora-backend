@@ -52,7 +52,7 @@ class UserControllerWebTest {
     @Test
     void theServiceIsCalledWithTheIdFromTheSecurityContextNotTheRequest() throws Exception {
         when(userService.getProfile(42L)).thenReturn(new UserProfileResponse(
-                42L, "user42@velora.test", "Forty Two", null, Role.CUSTOMER, Instant.now(), null));
+                42L, "user42@velora.test", "Forty Two", null, null, Role.CUSTOMER, Instant.now(), null));
 
         mockMvc.perform(get("/api/users/profile").with(as(42L, Role.CUSTOMER)))
                 .andExpect(status().isOk())

@@ -1,9 +1,11 @@
 package com.velora.backend.controller;
 
+import com.velora.backend.dto.booking.AddInspirationImageRequest;
 import com.velora.backend.dto.booking.AssignProfessionalRequest;
 import com.velora.backend.dto.booking.BookingRequest;
 import com.velora.backend.dto.booking.BookingResponse;
 import com.velora.backend.dto.booking.BookingStatusUpdateRequest;
+import com.velora.backend.dto.booking.BookingTimelineEventResponse;
 import com.velora.backend.dto.booking.ProfessionalMatchResponse;
 import com.velora.backend.security.UserPrincipal;
 import com.velora.backend.service.BookingService;
@@ -59,7 +61,7 @@ public class BookingController {
             @RequestParam(defaultValue = "20") int size) {
 
         int safeSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
-        Pageable pageable = PageRequest.of(Math.max(page, 0), safeSize, Sort.by(Sort.Direction.DESC, "scheduledAt"));
+            Pageable pageable = PageRequest.of(Math.max(page, 0), safeSize, Sort.by(Sort.Direction.DESC, "scheduledAt"));
 
         return ResponseEntity.ok(bookingService.getBookingsForUser(principal.getId(), principal.getRole(), pageable));
     }
@@ -82,6 +84,22 @@ public class BookingController {
     public ResponseEntity<BookingResponse> getById(@AuthenticationPrincipal UserPrincipal principal,
                                                     @PathVariable Long id) {
         return ResponseEntity.ok(bookingService.getById(principal.getId(), principal.getRole(), id));
+    }
+
+    @GetMapping("/{id}/timeline")
+    @Operation(summary = "Get the status-timeline audit trail for a booking (participant or admin only)")
+    public ResponseEntity<List<BookingTimelineEventResponse>> timeline(@AuthenticationPrincipal UserPrincipal principal,
+                                                                        @PathVariable Long id) {
+        return ResponseEntity.ok(bookingService.getTimeline(principal.getId(), principal.getRole(), id));
+    }
+
+    @PostMapping("/{id}/inspiration-images")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    @Operation(summary = "Attach an inspiration/moodboard image to a booking (owning customer only)")
+    public ResponseEntity<BookingResponse> addInspirationImage(@AuthenticationPrincipal UserPrincipal principal,
+                                                                 @PathVariable Long id,
+                                                                 @Valid @RequestBody AddInspirationImageRequest request) {
+        return ResponseEntity.ok(bookingService.addInspirationImage(principal.getId(), id, request.imageUrl()));
     }
 
     @PatchMapping("/{id}/cancel")

@@ -2,9 +2,11 @@ package com.velora.backend.service;
 
 import com.velora.backend.dto.booking.BookingRequest;
 import com.velora.backend.dto.booking.BookingResponse;
+import com.velora.backend.entity.AvailabilityStatus;
 import com.velora.backend.entity.Booking;
 import com.velora.backend.entity.BookingStatus;
 import com.velora.backend.entity.Category;
+import com.velora.backend.entity.ProfessionalProfile;
 import com.velora.backend.entity.RequestType;
 import com.velora.backend.entity.Role;
 import com.velora.backend.entity.ServiceGroup;
@@ -12,7 +14,11 @@ import com.velora.backend.entity.User;
 import com.velora.backend.exception.InvalidStateTransitionException;
 import com.velora.backend.exception.UnauthorizedActionException;
 import com.velora.backend.mapper.BookingMapper;
+import com.velora.backend.mapper.PortfolioItemMapper;
+import com.velora.backend.mapper.ProfessionalMapper;
+import com.velora.backend.repository.BookingInspirationImageRepository;
 import com.velora.backend.repository.BookingRepository;
+import com.velora.backend.repository.BookingTimelineEventRepository;
 import com.velora.backend.repository.CategoryRepository;
 import com.velora.backend.repository.PortfolioItemRepository;
 import com.velora.backend.repository.UserRepository;
@@ -20,7 +26,6 @@ import com.velora.backend.util.PageResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
@@ -49,8 +54,14 @@ class BookingServiceTest {
     private PortfolioItemRepository portfolioItemRepository;
     @Mock
     private CategoryRepository categoryRepository;
+    @Mock
+    private BookingInspirationImageRepository inspirationImageRepository;
+    @Mock
+    private BookingTimelineEventRepository timelineEventRepository;
+    @Mock
+    private BookingEventRecorder eventRecorder;
 
-    private final BookingMapper bookingMapper = new BookingMapper();
+    private final BookingMapper bookingMapper = new BookingMapper(new ProfessionalMapper(), new PortfolioItemMapper());
 
     private BookingService bookingService;
 
@@ -59,10 +70,19 @@ class BookingServiceTest {
 
     @BeforeEach
     void setUp() {
-        bookingService = new BookingService(bookingRepository, userRepository, portfolioItemRepository, categoryRepository, bookingMapper);
+        bookingService = new BookingService(bookingRepository, userRepository, portfolioItemRepository,
+                categoryRepository, inspirationImageRepository, timelineEventRepository, bookingMapper, eventRecorder);
 
         customer = User.builder().id(1L).email("customer@velora.test").fullName("Cust").role(Role.CUSTOMER).build();
         professional = User.builder().id(2L).email("professional@velora.test").fullName("Pro").role(Role.PROFESSIONAL).build();
+        professional.setProfessionalProfile(ProfessionalProfile.builder()
+                .id(1L).user(professional).availabilityStatus(AvailabilityStatus.AVAILABLE).ratingCount(0).build());
+    }
+
+    private BookingRequest requestFor(RequestType requestType, Long professionalId, Long portfolioItemId,
+                                       String notes, Long categoryId, String location) {
+        return new BookingRequest(requestType, professionalId, portfolioItemId,
+                Instant.now().plus(1, ChronoUnit.DAYS), notes, categoryId, null, null, null, null, location, null);
     }
 
     @Test
@@ -71,8 +91,7 @@ class BookingServiceTest {
         when(userRepository.findById(1L)).thenReturn(Optional.of(customer));
         when(userRepository.findById(3L)).thenReturn(Optional.of(notProfessional));
 
-        BookingRequest request = new BookingRequest(RequestType.FULL_HOME_PROJECT, 3L, null,
-                Instant.now().plus(1, ChronoUnit.DAYS), null, null, null, null, null);
+        BookingRequest request = requestFor(RequestType.FULL_HOME_PROJECT, 3L, null, null, null, null);
 
         assertThatThrownBy(() -> bookingService.createBooking(1L, request))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -90,14 +109,13 @@ class BookingServiceTest {
             return b;
         });
 
-        BookingRequest request = new BookingRequest(RequestType.FULL_HOME_PROJECT, 2L, null,
-                Instant.now().plus(1, ChronoUnit.DAYS), "please call ahead", null, null, null, null);
+        BookingRequest request = requestFor(RequestType.FULL_HOME_PROJECT, 2L, null, "please call ahead", null, null);
 
         BookingResponse response = bookingService.createBooking(1L, request);
 
         assertThat(response.id()).isEqualTo(100L);
         assertThat(response.status()).isEqualTo(BookingStatus.PENDING);
-        assertThat(response.professionalId()).isEqualTo(2L);
+        assertThat(response.professional().id()).isEqualTo(2L);
     }
 
     @Test
@@ -156,25 +174,36 @@ class BookingServiceTest {
             return b;
         });
 
-        BookingRequest request = new BookingRequest(RequestType.FULL_HOME_PROJECT, null, null,
-                Instant.now().plus(1, ChronoUnit.DAYS), null, null, null, null, null);
+        BookingRequest request = requestFor(RequestType.FULL_HOME_PROJECT, null, null, null, null, null);
 
         BookingResponse response = bookingService.createBooking(1L, request);
 
         assertThat(response.status()).isEqualTo(BookingStatus.PENDING_ASSIGNMENT);
-        assertThat(response.professionalId()).isNull();
+        assertThat(response.professional()).isNull();
     }
 
     @Test
     void createBookingRejectsPortfolioItemIdWithoutProfessionalId() {
         when(userRepository.findById(1L)).thenReturn(Optional.of(customer));
 
-        BookingRequest request = new BookingRequest(RequestType.FULL_HOME_PROJECT, null, 5L,
-                Instant.now().plus(1, ChronoUnit.DAYS), null, null, null, null, null);
+        BookingRequest request = requestFor(RequestType.FULL_HOME_PROJECT, null, 5L, null, null, null);
 
         assertThatThrownBy(() -> bookingService.createBooking(1L, request))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("portfolioItemId requires an explicit professionalId");
+    }
+
+    @Test
+    void createBookingRejectsMismatchedBudgetRange() {
+        when(userRepository.findById(1L)).thenReturn(Optional.of(customer));
+
+        BookingRequest request = new BookingRequest(RequestType.FULL_HOME_PROJECT, null, null,
+                Instant.now().plus(1, ChronoUnit.DAYS), null, null, null,
+                new java.math.BigDecimal("500000"), new java.math.BigDecimal("100000"), null, null, null);
+
+        assertThatThrownBy(() -> bookingService.createBooking(1L, request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("budgetMin cannot be greater than budgetMax");
     }
 
     @Test
@@ -189,7 +218,7 @@ class BookingServiceTest {
         BookingResponse response = bookingService.assignProfessional(9L, 2L);
 
         assertThat(response.status()).isEqualTo(BookingStatus.PENDING);
-        assertThat(response.professionalId()).isEqualTo(2L);
+        assertThat(response.professional().id()).isEqualTo(2L);
     }
 
     @Test
@@ -232,8 +261,7 @@ class BookingServiceTest {
     void createBookingRejectsIndividualServiceWithExplicitProfessionalId() {
         when(userRepository.findById(1L)).thenReturn(Optional.of(customer));
 
-        BookingRequest request = new BookingRequest(RequestType.INDIVIDUAL_SERVICE, 2L, null,
-                Instant.now().plus(1, ChronoUnit.DAYS), null, 3L, null, null, null);
+        BookingRequest request = requestFor(RequestType.INDIVIDUAL_SERVICE, 2L, null, null, 3L, null);
 
         assertThatThrownBy(() -> bookingService.createBooking(1L, request))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -244,8 +272,7 @@ class BookingServiceTest {
     void createBookingRejectsIndividualServiceWithoutCategory() {
         when(userRepository.findById(1L)).thenReturn(Optional.of(customer));
 
-        BookingRequest request = new BookingRequest(RequestType.INDIVIDUAL_SERVICE, null, null,
-                Instant.now().plus(1, ChronoUnit.DAYS), null, null, null, null, null);
+        BookingRequest request = requestFor(RequestType.INDIVIDUAL_SERVICE, null, null, null, null, null);
 
         assertThatThrownBy(() -> bookingService.createBooking(1L, request))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -258,8 +285,7 @@ class BookingServiceTest {
         Category homeCategory = Category.builder().id(4L).name("Kitchen").serviceGroup(ServiceGroup.HOME_PROJECT).build();
         when(categoryRepository.findById(4L)).thenReturn(Optional.of(homeCategory));
 
-        BookingRequest request = new BookingRequest(RequestType.INDIVIDUAL_SERVICE, null, null,
-                Instant.now().plus(1, ChronoUnit.DAYS), null, 4L, null, null, null);
+        BookingRequest request = requestFor(RequestType.INDIVIDUAL_SERVICE, null, null, null, 4L, null);
 
         assertThatThrownBy(() -> bookingService.createBooking(1L, request))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -278,8 +304,7 @@ class BookingServiceTest {
             return b;
         });
 
-        BookingRequest request = new BookingRequest(RequestType.INDIVIDUAL_SERVICE, null, null,
-                Instant.now().plus(1, ChronoUnit.DAYS), "leaking tap", 5L, null, null, "Mumbai");
+        BookingRequest request = requestFor(RequestType.INDIVIDUAL_SERVICE, null, null, "leaking tap", 5L, "Mumbai");
 
         BookingResponse response = bookingService.createBooking(1L, request);
 
@@ -308,7 +333,7 @@ class BookingServiceTest {
                 .satisfies(booking -> {
                     assertThat(booking.id()).isEqualTo(200L);
                     assertThat(booking.status()).isEqualTo(BookingStatus.PENDING_ASSIGNMENT);
-                    assertThat(booking.professionalId()).isNull();
+                    assertThat(booking.professional()).isNull();
                 });
     }
 

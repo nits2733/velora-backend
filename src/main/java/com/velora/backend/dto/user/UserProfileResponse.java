@@ -9,6 +9,7 @@ public record UserProfileResponse(
         String email,
         String fullName,
         String phone,
+        String avatarUrl,
         Role role,
         Instant createdAt,
         ProfessionalProfileResponse professionalProfile

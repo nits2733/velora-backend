@@ -6,12 +6,12 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.stereotype.Component;
 
 /**
- * Stand-in delivery until an email provider is wired up: writes the token to the
+ * Stand-in delivery until an email provider is wired up: writes the code to the
  * application log so the flow is exercisable end to end in development.
  * <p>
- * Backs off automatically the moment a real {@link PasswordResetNotifier} bean exists.
- * This must not be what runs in production - a reset token in a log file is a reset token
- * available to anyone who can read logs.
+ * Backs off automatically the moment a real {@link PasswordResetNotifier} bean exists
+ * (see {@link BrevoPasswordResetNotifier}). This must not be what runs in production -
+ * a reset code in a log file is a reset code available to anyone who can read logs.
  */
 @Component
 @ConditionalOnMissingBean(ignored = LoggingPasswordResetNotifier.class, value = PasswordResetNotifier.class)
@@ -19,8 +19,8 @@ import org.springframework.stereotype.Component;
 public class LoggingPasswordResetNotifier implements PasswordResetNotifier {
 
     @Override
-    public void sendResetToken(User user, String rawToken) {
-        log.warn("No email delivery configured - password reset token for {} is: {}",
-                user.getEmail(), rawToken);
+    public void sendResetOtp(User user, String otp) {
+        log.warn("No email delivery configured - password reset code for {} is: {}",
+                user.getEmail(), otp);
     }
 }

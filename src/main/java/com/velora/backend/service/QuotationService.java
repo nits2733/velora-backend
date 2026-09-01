@@ -27,6 +27,7 @@ public class QuotationService {
     private final QuotationRepository quotationRepository;
     private final BookingRepository bookingRepository;
     private final QuotationMapper quotationMapper;
+    private final BookingEventRecorder eventRecorder;
 
     @Transactional
     public QuotationResponse saveDraft(Long professionalId, Long bookingId, SaveQuotationRequest request) {
@@ -64,7 +65,9 @@ public class QuotationService {
         }
 
         quotation.setStatus(QuotationStatus.SENT);
-        return quotationMapper.toResponse(quotationRepository.save(quotation));
+        QuotationResponse response = quotationMapper.toResponse(quotationRepository.save(quotation));
+        eventRecorder.recordQuotationSent(quotation.getBooking());
+        return response;
     }
 
     @Transactional
@@ -95,7 +98,13 @@ public class QuotationService {
         }
 
         quotation.setStatus(newStatus);
-        return quotationMapper.toResponse(quotationRepository.save(quotation));
+        QuotationResponse response = quotationMapper.toResponse(quotationRepository.save(quotation));
+        if (newStatus == QuotationStatus.ACCEPTED) {
+            eventRecorder.recordQuotationAccepted(quotation.getBooking());
+        } else if (newStatus == QuotationStatus.REJECTED) {
+            eventRecorder.recordQuotationRejected(quotation.getBooking());
+        }
+        return response;
     }
 
     private void replaceLineItems(Quotation quotation, List<QuotationLineItemRequest> lineItemRequests) {

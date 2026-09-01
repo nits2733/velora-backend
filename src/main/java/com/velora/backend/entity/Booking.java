@@ -11,6 +11,8 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.OrderBy;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -23,6 +25,7 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 
 @Entity
 @Table(name = "bookings")
@@ -61,8 +64,20 @@ public class Booking {
     @Column(name = "preferred_style")
     private String preferredStyle;
 
+    /** @deprecated superseded by {@link #budgetMin}/{@link #budgetMax}; kept for backward compatibility. */
+    @Deprecated
     @Column(precision = 12, scale = 2)
     private BigDecimal budget;
+
+    @Column(name = "budget_min", precision = 12, scale = 2)
+    private BigDecimal budgetMin;
+
+    @Column(name = "budget_max", precision = 12, scale = 2)
+    private BigDecimal budgetMax;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "preferred_timeline")
+    private BookingTimeline preferredTimeline;
 
     private String location;
 
@@ -83,4 +98,9 @@ public class Booking {
     @LastModifiedDate
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
+
+    @OneToMany(mappedBy = "booking", fetch = FetchType.LAZY)
+    @OrderBy("createdAt ASC")
+    @Builder.Default
+    private List<BookingInspirationImage> inspirationImages = new java.util.ArrayList<>();
 }

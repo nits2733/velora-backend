@@ -40,6 +40,9 @@ public class UserService {
         if (request.phone() != null) {
             user.setPhone(request.phone());
         }
+        if (request.avatarUrl() != null) {
+            user.setAvatarUrl(request.avatarUrl());
+        }
         userRepository.save(user);
 
         ProfessionalProfile professionalProfile = null;

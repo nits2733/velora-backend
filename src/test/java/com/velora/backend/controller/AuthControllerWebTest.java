@@ -205,7 +205,7 @@ class AuthControllerWebTest {
         mockMvc.perform(post("/api/auth/password/reset")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"token":"reset-token","newPassword":"onlyletters"}
+                                {"email":"user@velora.test","otp":"123456","newPassword":"onlyletters"}
                                 """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.fieldErrors[0].field").value("newPassword"));

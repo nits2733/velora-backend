@@ -2,8 +2,11 @@ package com.velora.backend.service;
 
 import com.velora.backend.dto.booking.BookingRequest;
 import com.velora.backend.dto.booking.BookingResponse;
+import com.velora.backend.dto.booking.BookingTimelineEventResponse;
 import com.velora.backend.entity.Booking;
+import com.velora.backend.entity.BookingInspirationImage;
 import com.velora.backend.entity.BookingStatus;
+import com.velora.backend.entity.BookingTimelineEvent;
 import com.velora.backend.entity.Category;
 import com.velora.backend.entity.PortfolioItem;
 import com.velora.backend.entity.RequestType;
@@ -14,7 +17,9 @@ import com.velora.backend.exception.InvalidStateTransitionException;
 import com.velora.backend.exception.ResourceNotFoundException;
 import com.velora.backend.exception.UnauthorizedActionException;
 import com.velora.backend.mapper.BookingMapper;
+import com.velora.backend.repository.BookingInspirationImageRepository;
 import com.velora.backend.repository.BookingRepository;
+import com.velora.backend.repository.BookingTimelineEventRepository;
 import com.velora.backend.repository.CategoryRepository;
 import com.velora.backend.repository.PortfolioItemRepository;
 import com.velora.backend.repository.UserRepository;
@@ -25,6 +30,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.Set;
 
 @Service
@@ -34,11 +40,17 @@ public class BookingService {
     private static final Set<BookingStatus> CANCELLABLE_STATUSES =
             Set.of(BookingStatus.PENDING_ASSIGNMENT, BookingStatus.PENDING, BookingStatus.CONFIRMED);
 
+    private static final Set<BookingStatus> EDITABLE_STATUSES =
+            Set.of(BookingStatus.PENDING_ASSIGNMENT, BookingStatus.PENDING, BookingStatus.CONFIRMED);
+
     private final BookingRepository bookingRepository;
     private final UserRepository userRepository;
     private final PortfolioItemRepository portfolioItemRepository;
     private final CategoryRepository categoryRepository;
+    private final BookingInspirationImageRepository inspirationImageRepository;
+    private final BookingTimelineEventRepository timelineEventRepository;
     private final BookingMapper bookingMapper;
+    private final BookingEventRecorder eventRecorder;
 
     @Transactional
     public BookingResponse createBooking(Long customerId, BookingRequest request) {
@@ -57,6 +69,11 @@ public class BookingService {
             if (request.categoryId() == null) {
                 throw new IllegalArgumentException("Individual service requests must specify a category");
             }
+        }
+
+        if (request.budgetMin() != null && request.budgetMax() != null
+                && request.budgetMin().compareTo(request.budgetMax()) > 0) {
+            throw new IllegalArgumentException("budgetMin cannot be greater than budgetMax");
         }
 
         User professional = null;
@@ -100,14 +117,51 @@ public class BookingService {
                 .category(category)
                 .requestType(request.requestType())
                 .preferredStyle(request.preferredStyle())
-                .budget(request.budget())
+                .budgetMin(request.budgetMin())
+                .budgetMax(request.budgetMax())
+                .preferredTimeline(request.preferredTimeline())
                 .location(request.location())
                 .scheduledAt(request.scheduledAt())
                 .status(professional != null ? BookingStatus.PENDING : BookingStatus.PENDING_ASSIGNMENT)
                 .notes(request.notes())
                 .build();
 
-        return bookingMapper.toResponse(bookingRepository.save(booking));
+        booking = bookingRepository.save(booking);
+        final Booking savedBooking = booking;
+
+        if (request.inspirationImageUrls() != null && !request.inspirationImageUrls().isEmpty()) {
+            List<BookingInspirationImage> images = request.inspirationImageUrls().stream()
+                    .map(imageUrl -> inspirationImageRepository.save(BookingInspirationImage.builder()
+                            .booking(savedBooking)
+                            .imageUrl(imageUrl)
+                            .build()))
+                    .toList();
+            booking.setInspirationImages(images);
+        }
+
+        eventRecorder.recordSubmitted(booking);
+
+        return bookingMapper.toResponse(booking);
+    }
+
+    @Transactional
+    public BookingResponse addInspirationImage(Long customerId, Long bookingId, String imageUrl) {
+        Booking booking = findBooking(bookingId);
+
+        if (!booking.getCustomer().getId().equals(customerId)) {
+            throw new UnauthorizedActionException("Only the customer who made this booking can add images to it");
+        }
+        if (!EDITABLE_STATUSES.contains(booking.getStatus())) {
+            throw new InvalidStateTransitionException(
+                    "Cannot add inspiration images to a booking with status " + booking.getStatus());
+        }
+
+        inspirationImageRepository.save(BookingInspirationImage.builder()
+                .booking(booking)
+                .imageUrl(imageUrl)
+                .build());
+
+        return bookingMapper.toResponse(findBooking(bookingId));
     }
 
     @Transactional
@@ -127,7 +181,9 @@ public class BookingService {
 
         booking.setProfessional(professional);
         booking.setStatus(BookingStatus.PENDING);
-        return bookingMapper.toResponse(bookingRepository.save(booking));
+        booking = bookingRepository.save(booking);
+        eventRecorder.recordAssigned(booking);
+        return bookingMapper.toResponse(booking);
     }
 
     @Transactional(readOnly = true)
@@ -159,6 +215,15 @@ public class BookingService {
         return bookingMapper.toResponse(booking);
     }
 
+    @Transactional(readOnly = true)
+    public List<BookingTimelineEventResponse> getTimeline(Long userId, Role role, Long bookingId) {
+        Booking booking = findBooking(bookingId);
+        assertParticipantOrAdmin(userId, role, booking);
+        return timelineEventRepository.findByBookingIdOrderByCreatedAtAsc(bookingId).stream()
+                .map(this::toTimelineResponse)
+                .toList();
+    }
+
     @Transactional
     public BookingResponse cancel(Long customerId, Long bookingId) {
         Booking booking = findBooking(bookingId);
@@ -172,8 +237,11 @@ public class BookingService {
                     "Cannot cancel a booking with status " + booking.getStatus());
         }
 
+        BookingStatus previousStatus = booking.getStatus();
         booking.setStatus(BookingStatus.CANCELLED);
-        return bookingMapper.toResponse(bookingRepository.save(booking));
+        booking = bookingRepository.save(booking);
+        eventRecorder.recordCancelled(booking, previousStatus);
+        return bookingMapper.toResponse(booking);
     }
 
     @Transactional
@@ -186,8 +254,11 @@ public class BookingService {
 
         validateTransition(booking.getStatus(), newStatus);
 
+        BookingStatus previousStatus = booking.getStatus();
         booking.setStatus(newStatus);
-        return bookingMapper.toResponse(bookingRepository.save(booking));
+        booking = bookingRepository.save(booking);
+        eventRecorder.recordStatusChanged(booking, previousStatus, newStatus);
+        return bookingMapper.toResponse(booking);
     }
 
     private void validateTransition(BookingStatus current, BookingStatus next) {
@@ -212,6 +283,17 @@ public class BookingService {
         if (!isParticipant) {
             throw new UnauthorizedActionException("You do not have access to this booking");
         }
+    }
+
+    private BookingTimelineEventResponse toTimelineResponse(BookingTimelineEvent event) {
+        return new BookingTimelineEventResponse(
+                event.getId(),
+                event.getEventType(),
+                event.getFromStatus(),
+                event.getToStatus(),
+                event.getNote(),
+                event.getCreatedAt()
+        );
     }
 
     private Booking findBooking(Long bookingId) {

@@ -72,9 +72,9 @@ public class AuthController {
     }
 
     @PostMapping("/password/reset")
-    @Operation(summary = "Set a new password using a reset token (revokes all sessions)")
+    @Operation(summary = "Set a new password using the emailed 6-digit code (revokes all sessions)")
     public ResponseEntity<Void> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
-        passwordService.resetPassword(request.token(), request.newPassword());
+        passwordService.resetPassword(request.email(), request.otp(), request.newPassword());
         return ResponseEntity.noContent().build();
     }
 

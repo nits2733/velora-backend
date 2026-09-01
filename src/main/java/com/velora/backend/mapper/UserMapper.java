@@ -26,6 +26,7 @@ public class UserMapper {
                 user.getEmail(),
                 user.getFullName(),
                 user.getPhone(),
+                user.getAvatarUrl(),
                 user.getRole(),
                 user.getCreatedAt(),
                 professionalResponse

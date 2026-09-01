@@ -38,6 +38,8 @@ class QuotationServiceTest {
     private QuotationRepository quotationRepository;
     @Mock
     private BookingRepository bookingRepository;
+    @Mock
+    private BookingEventRecorder eventRecorder;
 
     private final QuotationMapper quotationMapper = new QuotationMapper();
 
@@ -49,7 +51,7 @@ class QuotationServiceTest {
 
     @BeforeEach
     void setUp() {
-        quotationService = new QuotationService(quotationRepository, bookingRepository, quotationMapper);
+        quotationService = new QuotationService(quotationRepository, bookingRepository, quotationMapper, eventRecorder);
 
         customer = User.builder().id(1L).email("customer@velora.test").fullName("Cust").role(Role.CUSTOMER).build();
         professional = User.builder().id(2L).email("professional@velora.test").fullName("Pro").role(Role.PROFESSIONAL).build();

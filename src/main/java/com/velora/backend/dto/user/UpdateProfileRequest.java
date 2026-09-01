@@ -13,6 +13,7 @@ import jakarta.validation.constraints.Size;
 public record UpdateProfileRequest(
         @Size(max = 150) String fullName,
         @Size(max = 20) String phone,
+        @Size(max = 1000) String avatarUrl,
         @Size(max = 2000) String bio,
         @Min(0) @Max(80) Integer yearsExperience,
         @Size(max = 150) String specialization,

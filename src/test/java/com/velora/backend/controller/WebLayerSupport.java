@@ -2,6 +2,7 @@ package com.velora.backend.controller;
 
 import com.velora.backend.config.CorsProperties;
 import com.velora.backend.config.SecurityConfig;
+import com.velora.backend.config.StorageProperties;
 import com.velora.backend.entity.Role;
 import com.velora.backend.security.JwtAuthFilter;
 import com.velora.backend.security.JwtService;
@@ -51,6 +52,12 @@ public class WebLayerSupport {
         CorsProperties properties = new CorsProperties();
         properties.setAllowedOrigins("http://localhost:5173");
         return properties;
+    }
+
+    /** Required by {@code WebConfig}, which @WebMvcTest auto-detects as a WebMvcConfigurer. */
+    @Bean
+    StorageProperties storageProperties() {
+        return new StorageProperties();
     }
 
     /**

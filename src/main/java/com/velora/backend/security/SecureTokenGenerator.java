@@ -32,6 +32,16 @@ public class SecureTokenGenerator {
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 
+    /**
+     * A fresh 6-digit numeric code, zero-padded, for OTP-style delivery (email/SMS)
+     * where a user types the value back in rather than following a link. Hash it with
+     * {@link #hash(String)} for storage exactly like {@link #generate()}'s output.
+     */
+    public String generateNumericCode() {
+        int value = secureRandom.nextInt(1_000_000);
+        return String.format("%06d", value);
+    }
+
     public String hash(String rawToken) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
