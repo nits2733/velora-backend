@@ -21,21 +21,19 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 import java.time.Instant;
 
 /**
- * A single-use 6-digit password recovery code, stored as a SHA-256 digest for the same
- * reason as {@link RefreshToken} - possession of the database must not equal possession
- * of a working code. {@link #attempts} caps guessing against one outstanding code before
- * it must be re-requested, since the code space (1,000,000) is far smaller than an opaque
- * token's.
+ * A single-use password recovery grant, stored as a SHA-256 digest for the same reason
+ * as {@link RefreshToken}: possession of the database must not equal possession of a
+ * working reset link.
  */
 @Entity
-@Table(name = "password_reset_otps")
+@Table(name = "password_reset_tokens")
 @EntityListeners(AuditingEntityListener.class)
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class PasswordResetOtp {
+public class PasswordResetToken {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -45,8 +43,8 @@ public class PasswordResetOtp {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
-    @Column(name = "code_hash", nullable = false, length = 64)
-    private String codeHash;
+    @Column(name = "token_hash", nullable = false, unique = true, length = 64)
+    private String tokenHash;
 
     @Column(name = "expires_at", nullable = false)
     private Instant expiresAt;
@@ -54,15 +52,11 @@ public class PasswordResetOtp {
     @Column(name = "used_at")
     private Instant usedAt;
 
-    @Builder.Default
-    @Column(nullable = false)
-    private int attempts = 0;
-
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
-    public boolean isUsable(Instant now, int maxAttempts) {
-        return usedAt == null && expiresAt.isAfter(now) && attempts < maxAttempts;
+    public boolean isUsable(Instant now) {
+        return usedAt == null && expiresAt.isAfter(now);
     }
 }

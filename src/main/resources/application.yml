@@ -11,6 +11,27 @@ spring:
       minimum-idle: 2
       connection-timeout: 20000
 
+  mail:
+    host: ${SPRING_MAIL_HOST:smtp-relay.brevo.com}
+    port: ${SPRING_MAIL_PORT:587}
+    username: ${BREVO_EMAIL:}
+    password: ${BREVO_SMTP_KEY:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
+
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
   jpa:
     hibernate:
       ddl-auto: validate
@@ -30,26 +51,6 @@ spring:
     default-property-inclusion: non_null
     serialization:
       write-dates-as-timestamps: false
-
-  servlet:
-    multipart:
-      max-file-size: 10MB
-      max-request-size: 10MB
-
-  # Brevo transactional SMTP relay. Only used if BrevoPasswordResetOtpNotifier activates
-  # (see its @ConditionalOnExpression) - harmless to configure unconditionally otherwise,
-  # since nothing sends mail through it unless that bean exists.
-  mail:
-    host: smtp-relay.brevo.com
-    port: 587
-    username: ${BREVO_EMAIL:}
-    password: ${BREVO_SMTP_KEY:}
-    properties:
-      mail:
-        smtp:
-          auth: true
-          starttls:
-            enable: true
 
 server:
   port: ${PORT:8080}
@@ -71,12 +72,35 @@ app:
     # Long-lived and revocable - this is what keeps a phone signed in between uses.
     refresh-token-ttl: ${REFRESH_TOKEN_TTL:30d}
     password-reset-ttl: ${PASSWORD_RESET_TTL:30m}
+  brevo:
+    from-email: ${BREVO_FROM_EMAIL:${BREVO_EMAIL:onboarding@brevo.com}}
+  otp:
+    expiry-minutes: ${OTP_EXPIRY_MINUTES:5}
+    max-attempts: ${OTP_MAX_ATTEMPTS:5}
+    cooldown-seconds: ${OTP_COOLDOWN_SECONDS:60}
+    length: ${OTP_LENGTH:6}
+  cloudinary:
+    url: ${CLOUDINARY_URL:}
+    cloud-name: ${CLOUDINARY_CLOUD_NAME:velora-dev}
+    api-key: ${CLOUDINARY_API_KEY:mock-key}
+    api-secret: ${CLOUDINARY_API_SECRET:mock-secret}
+  rate-limit:
+    forgot-password-capacity: ${RATE_LIMIT_FORGOT_PASSWORD_CAPACITY:5}
+    forgot-password-duration: ${RATE_LIMIT_FORGOT_PASSWORD_DURATION:15m}
+    media-upload-capacity: ${RATE_LIMIT_MEDIA_UPLOAD_CAPACITY:20}
+    media-upload-duration: ${RATE_LIMIT_MEDIA_UPLOAD_DURATION:1h}
+    otp-verify-capacity: ${RATE_LIMIT_OTP_VERIFY_CAPACITY:10}
+    otp-verify-duration: ${RATE_LIMIT_OTP_VERIFY_DURATION:1m}
+  media-upload:
+    max-file-size: ${MEDIA_UPLOAD_MAX_FILE_SIZE:10485760}
+    allowed-content-types: ${MEDIA_UPLOAD_ALLOWED_CONTENT_TYPES:image/jpeg,image/jpg,image/png,image/webp}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:19000,http://localhost:8081}
 
 springdoc:
   swagger-ui:
     path: /swagger-ui.html
+    persist-authorization: true
   api-docs:
     path: /v3/api-docs
 
