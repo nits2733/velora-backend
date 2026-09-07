@@ -69,7 +69,7 @@ class AuthServiceTest {
     }
 
     @Test
-    void registerCustomerDoesNotCreateProfessionalProfile() {
+    void registerCustomerDoesNotCreateProfessionalProfileAndWithholdsTokens() {
         when(userRepository.existsByEmail("new@velora.test")).thenReturn(false);
         when(userRepository.save(any(User.class))).thenAnswer(inv -> {
             User u = inv.getArgument(0);
@@ -79,11 +79,10 @@ class AuthServiceTest {
 
         RegisterRequest request = new RegisterRequest("new@velora.test", "password1", "New Customer", null, Role.CUSTOMER);
 
-        AuthResponse response = authService.register(request);
+        OtpResponse response = authService.register(request);
 
-        assertThat(response.user().id()).isEqualTo(42L);
-        assertThat(response.user().role()).isEqualTo(Role.CUSTOMER);
-        assertThat(response.accessToken()).isNotBlank();
+        assertThat(response.requiresOtp()).isTrue();
+        verify(otpService).generateAndSendOtp("new@velora.test", OtpPurpose.EMAIL_VERIFY);
         org.mockito.Mockito.verifyNoInteractions(professionalProfileRepository);
     }
 
@@ -104,6 +103,32 @@ class AuthServiceTest {
     }
 
     @Test
+    void verifyEmailActivatesAccountAndIssuesTokens() {
+        User user = User.builder().id(42L).email("new@velora.test").fullName("New Customer")
+                .role(Role.CUSTOMER).emailVerified(false).build();
+        when(userRepository.findByEmail("new@velora.test")).thenReturn(Optional.of(user));
+        when(refreshTokenService.issue(user)).thenReturn("refresh-token-123");
+
+        AuthResponse response = authService.verifyEmail(new VerifyOtpRequest("new@velora.test", "123456"));
+
+        assertThat(response.accessToken()).isNotBlank();
+        assertThat(user.isEmailVerified()).isTrue();
+        verify(otpService).verifyOtp("new@velora.test", "123456", OtpPurpose.EMAIL_VERIFY);
+        org.mockito.Mockito.verify(userRepository).save(user);
+    }
+
+    @Test
+    void resendVerificationOtpSkipsAlreadyVerifiedAccount() {
+        User user = User.builder().id(42L).email("verified@velora.test").fullName("Verified")
+                .role(Role.CUSTOMER).emailVerified(true).build();
+        when(userRepository.findByEmail("verified@velora.test")).thenReturn(Optional.of(user));
+
+        authService.resendVerificationOtp("verified@velora.test");
+
+        org.mockito.Mockito.verifyNoInteractions(otpService);
+    }
+
+    @Test
     void registerRejectsAdminRole() {
         RegisterRequest request = new RegisterRequest("wannabe.admin@velora.test", "password1", "Someone", null, Role.ADMIN);
 
@@ -116,7 +141,8 @@ class AuthServiceTest {
 
     @Test
     void loginDispatchesOtpAndReturnsRequiresOtpResponse() {
-        User user = User.builder().id(42L).email("user@velora.test").fullName("User").role(Role.CUSTOMER).build();
+        User user = User.builder().id(42L).email("user@velora.test").fullName("User")
+                .role(Role.CUSTOMER).emailVerified(true).build();
         when(userRepository.findByEmail("user@velora.test")).thenReturn(Optional.of(user));
 
         OtpResponse response = authService.login(new LoginRequest("user@velora.test", "Password@123"));
@@ -124,6 +150,19 @@ class AuthServiceTest {
         assertThat(response.requiresOtp()).isTrue();
         assertThat(response.message()).contains("OTP sent");
         verify(otpService).generateAndSendOtp("user@velora.test", OtpPurpose.LOGIN);
+    }
+
+    @Test
+    void loginRejectsUnverifiedEmail() {
+        User user = User.builder().id(42L).email("unverified@velora.test").fullName("User")
+                .role(Role.CUSTOMER).emailVerified(false).build();
+        when(userRepository.findByEmail("unverified@velora.test")).thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> authService.login(new LoginRequest("unverified@velora.test", "Password@123")))
+                .isInstanceOf(com.velora.backend.exception.AuthenticationFailedException.class);
+
+        org.mockito.Mockito.verify(otpService, org.mockito.Mockito.never())
+                .generateAndSendOtp(any(), eq(OtpPurpose.LOGIN));
     }
 
     @Test

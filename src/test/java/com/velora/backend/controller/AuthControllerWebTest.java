@@ -57,9 +57,9 @@ class AuthControllerWebTest {
     private RateLimiterService rateLimiterService;
 
     @Test
-    void registrationIsReachableWithoutAToken() throws Exception {
+    void registrationIsReachableWithoutATokenAndWithholdsTokensUntilVerified() throws Exception {
         when(authService.register(any(RegisterRequest.class)))
-                .thenReturn(AuthResponse.of("token", "refresh", 1L, "new@velora.test", "New User", Role.CUSTOMER));
+                .thenReturn(new OtpResponse("Verification OTP sent to your email", true));
 
         mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -67,9 +67,36 @@ class AuthControllerWebTest {
                                 {"email":"new@velora.test","password":"secret123","fullName":"New User","role":"CUSTOMER"}
                                 """))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.accessToken").value("token"))
-                .andExpect(jsonPath("$.tokenType").value("Bearer"))
-                .andExpect(jsonPath("$.user.role").value("CUSTOMER"));
+                .andExpect(jsonPath("$.requiresOtp").value(true))
+                .andExpect(jsonPath("$.message").value("Verification OTP sent to your email"));
+    }
+
+    @Test
+    void verifyEmailReturnsTokens() throws Exception {
+        when(authService.verifyEmail(any(VerifyOtpRequest.class)))
+                .thenReturn(AuthResponse.of("jwt-token", "refresh-token", 1L, "new@velora.test", "New User", Role.CUSTOMER));
+
+        mockMvc.perform(post("/api/auth/verify-email")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"email":"new@velora.test","otp":"123456"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accessToken").value("jwt-token"))
+                .andExpect(jsonPath("$.refreshToken").value("refresh-token"));
+    }
+
+    @Test
+    void resendVerificationOtpIsPublicAndAlwaysSucceeds() throws Exception {
+        mockMvc.perform(post("/api/auth/resend-verification-otp")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"email":"new@velora.test"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").exists());
+
+        verify(authService).resendVerificationOtp("new@velora.test");
     }
 
     @Test

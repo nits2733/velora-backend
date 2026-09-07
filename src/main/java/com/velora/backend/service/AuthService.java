@@ -9,6 +9,7 @@ import com.velora.backend.entity.OtpPurpose;
 import com.velora.backend.entity.ProfessionalProfile;
 import com.velora.backend.entity.Role;
 import com.velora.backend.entity.User;
+import com.velora.backend.exception.AuthenticationFailedException;
 import com.velora.backend.exception.DuplicateResourceException;
 import com.velora.backend.exception.UserNotFoundException;
 import com.velora.backend.repository.ProfessionalProfileRepository;
@@ -34,8 +35,13 @@ public class AuthService {
     private final RefreshTokenService refreshTokenService;
     private final OtpService otpService;
 
+    /**
+     * Creates the account but withholds tokens until the email is verified via OTP -
+     * otherwise anyone could register with someone else's address and get a working
+     * session for it.
+     */
     @Transactional
-    public AuthResponse register(RegisterRequest request) {
+    public OtpResponse register(RegisterRequest request) {
         if (request.role() == Role.ADMIN) {
             throw new IllegalArgumentException("Cannot self-register as an admin account");
         }
@@ -52,6 +58,7 @@ public class AuthService {
                 .fullName(request.fullName().trim())
                 .phone(request.phone())
                 .role(request.role())
+                .emailVerified(false)
                 .build();
 
         user = userRepository.save(user);
@@ -63,7 +70,36 @@ public class AuthService {
             professionalProfileRepository.save(profile);
         }
 
+        otpService.generateAndSendOtp(normalizedEmail, OtpPurpose.EMAIL_VERIFY);
+        return new OtpResponse("Verification OTP sent to your email", true);
+    }
+
+    /**
+     * Verifies the registration OTP, activates the account and issues its first session.
+     */
+    @Transactional
+    public AuthResponse verifyEmail(VerifyOtpRequest request) {
+        String normalizedEmail = request.email().trim().toLowerCase();
+
+        otpService.verifyOtp(normalizedEmail, request.otp(), OtpPurpose.EMAIL_VERIFY);
+
+        User user = userRepository.findByEmail(normalizedEmail)
+                .orElseThrow(() -> new UserNotFoundException("Invalid email or OTP"));
+
+        user.setEmailVerified(true);
+        userRepository.save(user);
+
         return issueSession(user);
+    }
+
+    /** Always succeeds outwardly, even for an unknown or already-verified email, to avoid account enumeration. */
+    @Transactional
+    public void resendVerificationOtp(String email) {
+        String normalizedEmail = email.trim().toLowerCase();
+
+        userRepository.findByEmail(normalizedEmail)
+                .filter(user -> !user.isEmailVerified())
+                .ifPresent(user -> otpService.generateAndSendOtp(normalizedEmail, OtpPurpose.EMAIL_VERIFY));
     }
 
     /**
@@ -75,8 +111,13 @@ public class AuthService {
         authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(normalizedEmail, request.password()));
 
-        userRepository.findByEmail(normalizedEmail)
+        User user = userRepository.findByEmail(normalizedEmail)
                 .orElseThrow(() -> new UserNotFoundException("Invalid email or password"));
+
+        if (!user.isEmailVerified()) {
+            throw new AuthenticationFailedException(
+                    "Email not verified. Check your inbox for the verification OTP, or request a new one");
+        }
 
         otpService.generateAndSendOtp(normalizedEmail, OtpPurpose.LOGIN);
         return new OtpResponse("OTP sent to your email", true);

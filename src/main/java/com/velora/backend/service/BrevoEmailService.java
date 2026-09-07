@@ -43,6 +43,10 @@ public class BrevoEmailService implements EmailService {
                 subject = "Your Login OTP — Velora";
                 heading = "Login Verification";
                 subText = "Use the OTP below to complete your login:";
+            } else if (purpose == OtpPurpose.EMAIL_VERIFY) {
+                subject = "Verify Your Email — Velora";
+                heading = "Email Verification";
+                subText = "Use this OTP to verify your email and activate your account:";
             } else {
                 subject = "Password Reset OTP — Velora";
                 heading = "Password Reset Request";

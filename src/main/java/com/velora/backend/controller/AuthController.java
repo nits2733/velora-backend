@@ -46,10 +46,27 @@ public class AuthController {
     private final RateLimiterService rateLimiterService;
 
     @PostMapping("/register")
-    @Operation(summary = "Register a new customer or professional account")
-    public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest request) {
-        AuthResponse response = authService.register(request);
+    @Operation(summary = "Register a new customer or professional account and dispatch an email verification OTP")
+    public ResponseEntity<OtpResponse> register(@Valid @RequestBody RegisterRequest request) {
+        OtpResponse response = authService.register(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
+    @PostMapping("/verify-email")
+    @Operation(summary = "Verify the registration OTP and receive JWT access token + refresh token")
+    public ResponseEntity<AuthResponse> verifyEmail(@Valid @RequestBody VerifyOtpRequest request,
+                                                     HttpServletRequest httpRequest) {
+        rateLimiterService.checkOtpVerifyRateLimit(extractClientIp(httpRequest));
+        return ResponseEntity.ok(authService.verifyEmail(request));
+    }
+
+    @PostMapping("/resend-verification-otp")
+    @Operation(summary = "Resend the email verification OTP (always returns success to prevent enumeration)")
+    public ResponseEntity<MessageResponse> resendVerificationOtp(@Valid @RequestBody ForgotPasswordRequest request,
+                                                                  HttpServletRequest httpRequest) {
+        rateLimiterService.checkForgotPasswordRateLimit(extractClientIp(httpRequest));
+        authService.resendVerificationOtp(request.email());
+        return ResponseEntity.ok(new MessageResponse("If this email is registered and unverified, an OTP has been sent"));
     }
 
     @PostMapping("/login")
