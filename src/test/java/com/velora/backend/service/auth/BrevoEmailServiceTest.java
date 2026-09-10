@@ -2,62 +2,62 @@ package com.velora.backend.service.auth;
 
 import com.velora.backend.entity.auth.OtpPurpose;
 import com.velora.backend.exception.EmailSendException;
-import jakarta.mail.Session;
-import jakarta.mail.internet.MimeMessage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.mail.MailSendException;
-import org.springframework.mail.javamail.JavaMailSender;
-
-import java.util.Properties;
+import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class BrevoEmailServiceTest {
 
     @Mock
-    private JavaMailSender javaMailSender;
+    private RestClient restClient;
+    @Mock
+    private RestClient.RequestBodyUriSpec requestBodyUriSpec;
+    @Mock
+    private RestClient.RequestBodySpec requestBodySpec;
+    @Mock
+    private RestClient.ResponseSpec responseSpec;
 
     private BrevoEmailService emailService;
 
     @BeforeEach
     void setUp() {
-        emailService = new BrevoEmailService(javaMailSender, "test@velora.test");
+        emailService = new BrevoEmailService(restClient, "test@velora.test");
+
+        when(restClient.post()).thenReturn(requestBodyUriSpec);
+        when(requestBodyUriSpec.uri("/smtp/email")).thenReturn(requestBodySpec);
+        when(requestBodySpec.body(any(Object.class))).thenReturn(requestBodySpec);
     }
 
     @Test
     void sendsLoginOtpEmailSuccessfully() {
-        MimeMessage mimeMessage = new MimeMessage(Session.getInstance(new Properties()));
-        when(javaMailSender.createMimeMessage()).thenReturn(mimeMessage);
+        when(requestBodySpec.retrieve()).thenReturn(responseSpec);
 
         emailService.sendOtpEmail("user@velora.test", "123456", OtpPurpose.LOGIN);
 
-        verify(javaMailSender).send(any(MimeMessage.class));
+        // No exception means the Brevo API call went through as expected;
+        // the fluent chain wiring above is the assertion.
     }
 
     @Test
     void sendsPasswordResetOtpEmailSuccessfully() {
-        MimeMessage mimeMessage = new MimeMessage(Session.getInstance(new Properties()));
-        when(javaMailSender.createMimeMessage()).thenReturn(mimeMessage);
+        when(requestBodySpec.retrieve()).thenReturn(responseSpec);
 
         emailService.sendOtpEmail("user@velora.test", "654321", OtpPurpose.PASSWORD_RESET);
-
-        verify(javaMailSender).send(any(MimeMessage.class));
     }
 
     @Test
-    void throwsEmailSendExceptionWhenMailSenderFails() {
-        MimeMessage mimeMessage = new MimeMessage(Session.getInstance(new Properties()));
-        when(javaMailSender.createMimeMessage()).thenReturn(mimeMessage);
-        doThrow(new MailSendException("SMTP relay unavailable")).when(javaMailSender).send(any(MimeMessage.class));
+    void throwsEmailSendExceptionWhenBrevoApiCallFails() {
+        doThrow(new RestClientException("connect timed out")).when(requestBodySpec).retrieve();
 
         assertThatThrownBy(() -> emailService.sendOtpEmail("user@velora.test", "123456", OtpPurpose.LOGIN))
                 .isInstanceOf(EmailSendException.class)

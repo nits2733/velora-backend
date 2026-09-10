@@ -11,22 +11,6 @@ spring:
       minimum-idle: 2
       connection-timeout: 20000
 
-  mail:
-    host: ${SPRING_MAIL_HOST:smtp-relay.brevo.com}
-    port: ${SPRING_MAIL_PORT:587}
-    username: ${BREVO_EMAIL:}
-    password: ${BREVO_SMTP_KEY:}
-    properties:
-      mail:
-        smtp:
-          auth: true
-          starttls:
-            enable: true
-            required: true
-          connectiontimeout: 5000
-          timeout: 5000
-          writetimeout: 5000
-
   servlet:
     multipart:
       max-file-size: 10MB
@@ -75,7 +59,10 @@ app:
   google:
     client-id: ${GOOGLE_CLIENT_ID:}
   brevo:
-    from-email: ${BREVO_FROM_EMAIL:${BREVO_EMAIL:onboarding@brevo.com}}
+    # Brevo API key (dashboard -> SMTP & API -> API Keys) - not the SMTP key.
+    # Emails go via Brevo's HTTPS API, not SMTP (see BrevoEmailService).
+    api-key: ${BREVO_API_KEY:}
+    from-email: ${BREVO_FROM_EMAIL:onboarding@brevo.com}
   otp:
     expiry-minutes: ${OTP_EXPIRY_MINUTES:5}
     max-attempts: ${OTP_MAX_ATTEMPTS:5}
