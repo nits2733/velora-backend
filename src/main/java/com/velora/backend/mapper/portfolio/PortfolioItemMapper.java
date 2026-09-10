@@ -13,7 +13,7 @@ public class PortfolioItemMapper {
 
     public CategoryResponse toCategoryResponse(Category category) {
         return new CategoryResponse(category.getId(), category.getName(), category.getDescription(),
-                category.getServiceGroup());
+                category.getServiceGroup(), category.getImageUrl());
     }
 
     public PortfolioItemSummaryResponse toSummaryResponse(PortfolioItem item) {

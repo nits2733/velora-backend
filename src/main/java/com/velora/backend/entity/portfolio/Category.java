@@ -36,4 +36,7 @@ public class Category {
     @Enumerated(EnumType.STRING)
     @Column(name = "service_group", nullable = false)
     private ServiceGroup serviceGroup;
+
+    @Column(name = "image_url", length = 1000)
+    private String imageUrl;
 }

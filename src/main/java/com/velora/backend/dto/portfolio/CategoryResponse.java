@@ -6,6 +6,7 @@ public record CategoryResponse(
         Long id,
         String name,
         String description,
-        ServiceGroup serviceGroup
+        ServiceGroup serviceGroup,
+        String imageUrl
 ) {
 }
