@@ -1,6 +1,6 @@
 package com.velora.backend.dto.user;
 
-import com.velora.backend.entity.Role;
+import com.velora.backend.entity.user.Role;
 
 import java.time.Instant;
 

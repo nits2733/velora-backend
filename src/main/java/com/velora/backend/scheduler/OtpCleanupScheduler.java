@@ -1,8 +1,8 @@
 package com.velora.backend.scheduler;
 
-import com.velora.backend.repository.OtpRepository;
-import com.velora.backend.repository.PasswordResetTokenRepository;
-import com.velora.backend.repository.RefreshTokenRepository;
+import com.velora.backend.repository.auth.OtpRepository;
+import com.velora.backend.repository.auth.PasswordResetTokenRepository;
+import com.velora.backend.repository.auth.RefreshTokenRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;

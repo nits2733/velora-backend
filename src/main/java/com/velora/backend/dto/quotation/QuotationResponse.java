@@ -1,6 +1,6 @@
 package com.velora.backend.dto.quotation;
 
-import com.velora.backend.entity.QuotationStatus;
+import com.velora.backend.entity.quotation.QuotationStatus;
 
 import java.math.BigDecimal;
 import java.time.Instant;

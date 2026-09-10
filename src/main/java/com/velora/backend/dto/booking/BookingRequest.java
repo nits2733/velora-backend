@@ -1,7 +1,7 @@
 package com.velora.backend.dto.booking;
 
-import com.velora.backend.entity.BookingTimeline;
-import com.velora.backend.entity.RequestType;
+import com.velora.backend.entity.booking.BookingTimeline;
+import com.velora.backend.entity.booking.RequestType;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Future;
 import jakarta.validation.constraints.NotNull;

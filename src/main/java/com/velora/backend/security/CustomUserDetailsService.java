@@ -1,7 +1,7 @@
 package com.velora.backend.security;
 
-import com.velora.backend.entity.User;
-import com.velora.backend.repository.UserRepository;
+import com.velora.backend.entity.user.User;
+import com.velora.backend.repository.user.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;

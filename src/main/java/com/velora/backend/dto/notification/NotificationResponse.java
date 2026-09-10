@@ -1,6 +1,6 @@
 package com.velora.backend.dto.notification;
 
-import com.velora.backend.entity.NotificationType;
+import com.velora.backend.entity.notification.NotificationType;
 
 import java.time.Instant;
 

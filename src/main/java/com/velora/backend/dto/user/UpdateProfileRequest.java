@@ -1,6 +1,6 @@
 package com.velora.backend.dto.user;
 
-import com.velora.backend.entity.AvailabilityStatus;
+import com.velora.backend.entity.professional.AvailabilityStatus;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;

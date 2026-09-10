@@ -1,7 +1,7 @@
 package com.velora.backend.security;
 
 import com.velora.backend.config.JwtProperties;
-import com.velora.backend.entity.Role;
+import com.velora.backend.entity.user.Role;
 import io.jsonwebtoken.ExpiredJwtException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

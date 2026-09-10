@@ -32,7 +32,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```
 src/main/java/com/velora/backend/
   controller/   HTTP endpoints, @PreAuthorize, request-shape only
-  dto/          request/response records, one subpackage per domain (auth, booking, portfolio, ...)
+  dto/          request/response records
   mapper/       entity <-> DTO conversion, no business logic
   service/      business rules, state transitions, @Transactional
   repository/   Spring Data JPA interfaces (derived methods / Specification only)
@@ -41,6 +41,12 @@ src/main/java/com/velora/backend/
   config/       SecurityConfig, CORS/JWT/auth @ConfigurationProperties, OpenAPI, JPA auditing
   exception/    domain exceptions + GlobalExceptionHandler + ApiErrorResponse
   util/         PageResponse and similar small shared helpers
+
+  entity/, service/, repository/, controller/, mapper/, and dto/ are each subpackaged by
+  domain (auth, booking, portfolio, professional, quotation, review, user, notification,
+  media, upload, favorites). service/ and controller/ additionally have a `common`
+  subpackage for the rare piece genuinely shared across domains (e.g. RateLimiterService).
+  security/, config/, exception/, util/ stay flat - they're not domain-scoped.
 src/main/resources/db/migration/   Flyway V1..Vn, additive only (see Architecture Rules)
 src/test/java/.../service/         business-rule tests (Mockito)
 src/test/java/.../controller/      @WebMvcTest against the real security chain

@@ -40,7 +40,7 @@ flowchart LR
 > 📄 Full scope beyond what's built so far — project execution/scheduling, milestones,
 > payments, material procurement — is tracked as later phases. See
 > [`IMPLEMENTATION_FLOW.md`](./IMPLEMENTATION_FLOW.md) for exactly what's built vs. not,
-> and [`Velora-Whitepaper.html`](./Velora-Whitepaper.html)
+> and [`Velora-Whitepaper.html`](./docs/Velora-Whitepaper.html)
 > for the full product + architecture writeup (open in a browser, print-to-PDF for a
 > shareable document).
 
@@ -432,8 +432,8 @@ confirms**, never a silent auto-assignment.
 &nbsp;•&nbsp;
 🧭 [Flow diagrams](./IMPLEMENTATION_FLOW.md#27-appendix-end-to-end-flow-diagrams-no-code) — every request flow as a no-code decision tree
 &nbsp;•&nbsp;
-📘 [`Velora-Whitepaper.html`](./Velora-Whitepaper.html) — product + architecture whitepaper (print-to-PDF)
+📘 [`Velora-Whitepaper.html`](./docs/Velora-Whitepaper.html) — product + architecture whitepaper (print-to-PDF)
 &nbsp;•&nbsp;
-🔌 [`Velora-ThirdParty-Setup.pdf`](./Velora-ThirdParty-Setup.pdf) — third-party services to set up, and how
+🔌 [`Velora-ThirdParty-Setup.pdf`](./docs/Velora-ThirdParty-Setup.pdf) — third-party services to set up, and how
 
 </div>

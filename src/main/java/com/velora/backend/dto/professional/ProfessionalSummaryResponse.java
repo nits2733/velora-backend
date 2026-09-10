@@ -1,6 +1,6 @@
 package com.velora.backend.dto.professional;
 
-import com.velora.backend.entity.AvailabilityStatus;
+import com.velora.backend.entity.professional.AvailabilityStatus;
 
 import java.math.BigDecimal;
 

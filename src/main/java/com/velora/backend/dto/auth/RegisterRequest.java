@@ -1,6 +1,6 @@
 package com.velora.backend.dto.auth;
 
-import com.velora.backend.entity.Role;
+import com.velora.backend.entity.user.Role;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;

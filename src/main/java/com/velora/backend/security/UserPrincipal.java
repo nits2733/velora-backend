@@ -1,7 +1,7 @@
 package com.velora.backend.security;
 
-import com.velora.backend.entity.Role;
-import com.velora.backend.entity.User;
+import com.velora.backend.entity.user.Role;
+import com.velora.backend.entity.user.User;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;

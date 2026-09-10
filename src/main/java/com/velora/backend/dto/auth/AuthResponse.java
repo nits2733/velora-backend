@@ -1,6 +1,6 @@
 package com.velora.backend.dto.auth;
 
-import com.velora.backend.entity.Role;
+import com.velora.backend.entity.user.Role;
 
 /**
  * Returned by register, login and refresh alike, so a client has one shape to handle.

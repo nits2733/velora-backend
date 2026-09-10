@@ -1,6 +1,6 @@
 package com.velora.backend.dto.portfolio;
 
-import com.velora.backend.entity.ServiceGroup;
+import com.velora.backend.entity.portfolio.ServiceGroup;
 
 public record CategoryResponse(
         Long id,
