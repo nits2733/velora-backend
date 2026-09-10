@@ -1,14 +1,18 @@
 package com.velora.backend.service.auth;
 
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
 import com.velora.backend.config.JwtProperties;
 import com.velora.backend.dto.auth.AuthResponse;
+import com.velora.backend.dto.auth.GoogleLoginRequest;
 import com.velora.backend.dto.auth.LoginRequest;
 import com.velora.backend.dto.auth.OtpResponse;
 import com.velora.backend.dto.auth.RegisterRequest;
 import com.velora.backend.dto.auth.VerifyOtpRequest;
 import com.velora.backend.entity.auth.OtpPurpose;
+import com.velora.backend.entity.user.AuthProvider;
 import com.velora.backend.entity.user.Role;
 import com.velora.backend.entity.user.User;
+import com.velora.backend.exception.AuthenticationFailedException;
 import com.velora.backend.exception.DuplicateResourceException;
 import com.velora.backend.repository.professional.ProfessionalProfileRepository;
 import com.velora.backend.repository.user.UserRepository;
@@ -43,6 +47,8 @@ class AuthServiceTest {
     private RefreshTokenService refreshTokenService;
     @Mock
     private OtpService otpService;
+    @Mock
+    private GoogleTokenVerifier googleTokenVerifier;
 
     private AuthService authService;
 
@@ -55,7 +61,17 @@ class AuthServiceTest {
         JwtService jwtService = new JwtService(properties);
 
         authService = new AuthService(userRepository, professionalProfileRepository,
-                new BCryptPasswordEncoder(), jwtService, authenticationManager, refreshTokenService, otpService);
+                new BCryptPasswordEncoder(), jwtService, authenticationManager, refreshTokenService, otpService,
+                googleTokenVerifier);
+    }
+
+    private static GoogleIdToken.Payload googlePayload(String subject, String email) {
+        return (GoogleIdToken.Payload) new GoogleIdToken.Payload()
+                .setSubject(subject)
+                .setEmail(email)
+                .setEmailVerified(true)
+                .set("name", "Google User")
+                .set("picture", "https://example.com/avatar.png");
     }
 
     @Test
@@ -206,5 +222,74 @@ class AuthServiceTest {
         authService.logoutEverywhere(42L);
 
         org.mockito.Mockito.verify(refreshTokenService).revokeAllForUser(42L);
+    }
+
+    @Test
+    void googleLoginCreatesANewCustomerWithNoProfessionalProfile() {
+        when(googleTokenVerifier.verify("valid-token")).thenReturn(googlePayload("sub-1", "newgoogle@velora.test"));
+        when(userRepository.findByGoogleId("sub-1")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("newgoogle@velora.test")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> {
+            User u = inv.getArgument(0);
+            u.setId(99L);
+            return u;
+        });
+        when(refreshTokenService.issue(any(User.class))).thenReturn("refresh-token-google");
+
+        AuthResponse response = authService.googleLogin(new GoogleLoginRequest("valid-token"));
+
+        assertThat(response.accessToken()).isNotBlank();
+        org.mockito.Mockito.verifyNoInteractions(professionalProfileRepository);
+
+        org.mockito.ArgumentCaptor<User> captor = org.mockito.ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(captor.capture());
+        assertThat(captor.getValue().getAuthProvider()).isEqualTo(AuthProvider.GOOGLE);
+        assertThat(captor.getValue().getRole()).isEqualTo(Role.CUSTOMER);
+        assertThat(captor.getValue().isEmailVerified()).isTrue();
+        assertThat(captor.getValue().getGoogleId()).isEqualTo("sub-1");
+    }
+
+    @Test
+    void googleLoginLinksAnExistingLocalCustomerInsteadOfDuplicating() {
+        User existing = User.builder().id(5L).email("existing@velora.test").fullName("Existing")
+                .role(Role.CUSTOMER).authProvider(AuthProvider.LOCAL).build();
+
+        when(googleTokenVerifier.verify("valid-token")).thenReturn(googlePayload("sub-2", "existing@velora.test"));
+        when(userRepository.findByGoogleId("sub-2")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("existing@velora.test")).thenReturn(Optional.of(existing));
+        when(refreshTokenService.issue(existing)).thenReturn("refresh-token-linked");
+
+        AuthResponse response = authService.googleLogin(new GoogleLoginRequest("valid-token"));
+
+        assertThat(response.user().id()).isEqualTo(5L);
+        assertThat(existing.getGoogleId()).isEqualTo("sub-2");
+        verify(userRepository).save(existing);
+    }
+
+    @Test
+    void googleLoginRejectsAnExistingProfessionalAccount() {
+        User professional = User.builder().id(6L).email("pro@velora.test").fullName("Pro")
+                .role(Role.PROFESSIONAL).build();
+
+        when(googleTokenVerifier.verify("valid-token")).thenReturn(googlePayload("sub-3", "pro@velora.test"));
+        when(userRepository.findByGoogleId("sub-3")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("pro@velora.test")).thenReturn(Optional.of(professional));
+
+        assertThatThrownBy(() -> authService.googleLogin(new GoogleLoginRequest("valid-token")))
+                .isInstanceOf(AuthenticationFailedException.class);
+
+        org.mockito.Mockito.verify(userRepository, org.mockito.Mockito.never()).save(any());
+        org.mockito.Mockito.verifyNoInteractions(refreshTokenService);
+    }
+
+    @Test
+    void googleLoginRejectsAnInvalidToken() {
+        when(googleTokenVerifier.verify("bad-token"))
+                .thenThrow(new AuthenticationFailedException("Invalid Google sign-in token"));
+
+        assertThatThrownBy(() -> authService.googleLogin(new GoogleLoginRequest("bad-token")))
+                .isInstanceOf(AuthenticationFailedException.class);
+
+        org.mockito.Mockito.verifyNoInteractions(userRepository);
     }
 }

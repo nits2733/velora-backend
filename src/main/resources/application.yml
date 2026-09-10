@@ -72,6 +72,8 @@ app:
     # Long-lived and revocable - this is what keeps a phone signed in between uses.
     refresh-token-ttl: ${REFRESH_TOKEN_TTL:30d}
     password-reset-ttl: ${PASSWORD_RESET_TTL:30m}
+  google:
+    client-id: ${GOOGLE_CLIENT_ID:}
   brevo:
     from-email: ${BREVO_FROM_EMAIL:${BREVO_EMAIL:onboarding@brevo.com}}
   otp:

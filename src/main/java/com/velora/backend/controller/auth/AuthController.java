@@ -4,6 +4,7 @@ import com.velora.backend.dto.auth.AuthResponse;
 import com.velora.backend.dto.auth.ChangePasswordRequest;
 import com.velora.backend.dto.auth.ForgotPasswordRequest;
 import com.velora.backend.dto.auth.ForgotPasswordResponse;
+import com.velora.backend.dto.auth.GoogleLoginRequest;
 import com.velora.backend.dto.auth.LoginRequest;
 import com.velora.backend.dto.auth.MessageResponse;
 import com.velora.backend.dto.auth.OtpResponse;
@@ -81,6 +82,12 @@ public class AuthController {
                                                        HttpServletRequest httpRequest) {
         rateLimiterService.checkOtpVerifyRateLimit(extractClientIp(httpRequest));
         return ResponseEntity.ok(authService.verifyLoginOtp(request));
+    }
+
+    @PostMapping("/google")
+    @Operation(summary = "Sign in or register with a Google ID token (customer accounts only)")
+    public ResponseEntity<AuthResponse> google(@Valid @RequestBody GoogleLoginRequest request) {
+        return ResponseEntity.ok(authService.googleLogin(request));
     }
 
     @PostMapping({"/forgot-password", "/password/forgot"})

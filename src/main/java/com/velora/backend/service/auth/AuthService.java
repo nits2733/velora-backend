@@ -1,12 +1,15 @@
 package com.velora.backend.service.auth;
 
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
 import com.velora.backend.dto.auth.AuthResponse;
+import com.velora.backend.dto.auth.GoogleLoginRequest;
 import com.velora.backend.dto.auth.LoginRequest;
 import com.velora.backend.dto.auth.OtpResponse;
 import com.velora.backend.dto.auth.RegisterRequest;
 import com.velora.backend.dto.auth.VerifyOtpRequest;
 import com.velora.backend.entity.auth.OtpPurpose;
 import com.velora.backend.entity.professional.ProfessionalProfile;
+import com.velora.backend.entity.user.AuthProvider;
 import com.velora.backend.entity.user.Role;
 import com.velora.backend.entity.user.User;
 import com.velora.backend.exception.AuthenticationFailedException;
@@ -23,6 +26,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.UUID;
+
 @Service
 @RequiredArgsConstructor
 public class AuthService {
@@ -34,6 +39,7 @@ public class AuthService {
     private final AuthenticationManager authenticationManager;
     private final RefreshTokenService refreshTokenService;
     private final OtpService otpService;
+    private final GoogleTokenVerifier googleTokenVerifier;
 
     /**
      * Creates the account but withholds tokens until the email is verified via OTP -
@@ -136,6 +142,49 @@ public class AuthService {
                 .orElseThrow(() -> new UserNotFoundException("Invalid email or password"));
 
         return issueSession(user);
+    }
+
+    /**
+     * Signs in with a Google ID token - customer accounts only. A first-time email
+     * creates a new customer (already email-verified, since Google vouched for it); a
+     * returning email on an existing LOCAL account gets linked (Google has proven
+     * ownership of that address) rather than rejected as a duplicate.
+     */
+    @Transactional
+    public AuthResponse googleLogin(GoogleLoginRequest request) {
+        GoogleIdToken.Payload payload = googleTokenVerifier.verify(request.idToken());
+        String normalizedEmail = payload.getEmail().trim().toLowerCase();
+
+        User user = userRepository.findByGoogleId(payload.getSubject())
+                .or(() -> userRepository.findByEmail(normalizedEmail))
+                .orElseGet(() -> createGoogleCustomer(normalizedEmail, payload));
+
+        if (user.getRole() != Role.CUSTOMER) {
+            throw new AuthenticationFailedException("Google Sign-In is only available for customer accounts");
+        }
+
+        if (user.getGoogleId() == null) {
+            user.setGoogleId(payload.getSubject());
+            userRepository.save(user);
+        }
+
+        return issueSession(user);
+    }
+
+    private User createGoogleCustomer(String email, GoogleIdToken.Payload payload) {
+        Object name = payload.get("name");
+        User user = User.builder()
+                .email(email)
+                .passwordHash(passwordEncoder.encode(UUID.randomUUID().toString()))
+                .fullName(name != null ? name.toString() : email)
+                .avatarUrl((String) payload.get("picture"))
+                .role(Role.CUSTOMER)
+                .emailVerified(true)
+                .authProvider(AuthProvider.GOOGLE)
+                .googleId(payload.getSubject())
+                .build();
+
+        return userRepository.save(user);
     }
 
     /**

@@ -268,6 +268,47 @@ class AuthControllerWebTest {
     }
 
     @Test
+    void googleLoginIsReachableWithoutATokenAndReturnsTokens() throws Exception {
+        when(authService.googleLogin(any(com.velora.backend.dto.auth.GoogleLoginRequest.class)))
+                .thenReturn(AuthResponse.of("jwt-token", "refresh-token", 1L, "googleuser@velora.test", "Google User", Role.CUSTOMER));
+
+        mockMvc.perform(post("/api/auth/google")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"idToken":"a-valid-google-id-token"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accessToken").value("jwt-token"))
+                .andExpect(jsonPath("$.refreshToken").value("refresh-token"));
+    }
+
+    @Test
+    void googleLoginRejectsAMissingIdToken() throws Exception {
+        mockMvc.perform(post("/api/auth/google")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"idToken":""}
+                                """))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(authService);
+    }
+
+    @Test
+    void googleLoginRejectingANonCustomerAccountSurfacesAsUnauthorized() throws Exception {
+        when(authService.googleLogin(any(com.velora.backend.dto.auth.GoogleLoginRequest.class)))
+                .thenThrow(new AuthenticationFailedException("Google Sign-In is only available for customer accounts"));
+
+        mockMvc.perform(post("/api/auth/google")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"idToken":"a-valid-google-id-token"}
+                                """))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("Google Sign-In is only available for customer accounts"));
+    }
+
+    @Test
     void aFailedLoginNeverRevealsWhichHalfWasWrong() throws Exception {
         when(authService.login(any(LoginRequest.class)))
                 .thenThrow(new BadCredentialsException("Bad credentials"));

@@ -50,6 +50,7 @@ public class SecurityConfig {
             "/api/auth/resend-verification-otp",
             "/api/auth/login",
             "/api/auth/verify-login-otp",
+            "/api/auth/google",
             "/api/auth/refresh",
             "/api/auth/logout",
             "/api/auth/password/forgot",
