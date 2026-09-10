@@ -1,0 +1,37 @@
+# Render Blueprint - https://render.com/docs/blueprint-spec
+#
+# Deploy: on render.com, "New +" -> "Blueprint" -> connect this repo (master
+# branch). Render reads this file and provisions the service below. Every
+# `sync: false` env var is a secret Render will prompt you for once, then
+# store encrypted - never committed here.
+services:
+  - type: web
+    name: velora-backend
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    branch: master
+    healthCheckPath: /actuator/health
+    envVars:
+      - key: DB_URL
+        sync: false
+      - key: DB_USERNAME
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: BREVO_EMAIL
+        sync: false
+      - key: BREVO_SMTP_KEY
+        sync: false
+      - key: BREVO_FROM_EMAIL
+        sync: false
+      - key: CLOUDINARY_URL
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        # No frontend origin check applies to a bare React Native/Expo APK
+        # (no browser CORS involved) - only needed if a web client is added later.
+        value: "http://localhost:19000,http://localhost:8081"
