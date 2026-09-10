@@ -42,6 +42,10 @@ public class BookingEventRecorder {
                 "Professional assigned",
                 booking.getProfessional().getFullName() + " has been assigned to your project.",
                 booking.getId());
+        notificationService.create(booking.getProfessional(), NotificationType.BOOKING_ASSIGNED,
+                "New booking assigned",
+                "You've been assigned a new booking from " + booking.getCustomer().getFullName() + ".",
+                booking.getId());
     }
 
     @Transactional

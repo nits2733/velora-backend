@@ -8,7 +8,6 @@ import com.velora.backend.entity.booking.BookingInspirationImage;
 import com.velora.backend.entity.booking.BookingStatus;
 import com.velora.backend.entity.booking.BookingTimelineEvent;
 import com.velora.backend.entity.portfolio.Category;
-import com.velora.backend.entity.portfolio.PortfolioItem;
 import com.velora.backend.entity.booking.RequestType;
 import com.velora.backend.entity.user.Role;
 import com.velora.backend.entity.portfolio.ServiceGroup;
@@ -21,7 +20,6 @@ import com.velora.backend.repository.booking.BookingInspirationImageRepository;
 import com.velora.backend.repository.booking.BookingRepository;
 import com.velora.backend.repository.booking.BookingTimelineEventRepository;
 import com.velora.backend.repository.portfolio.CategoryRepository;
-import com.velora.backend.repository.portfolio.PortfolioItemRepository;
 import com.velora.backend.repository.user.UserRepository;
 import com.velora.backend.util.PageResponse;
 import lombok.RequiredArgsConstructor;
@@ -45,7 +43,6 @@ public class BookingService {
 
     private final BookingRepository bookingRepository;
     private final UserRepository userRepository;
-    private final PortfolioItemRepository portfolioItemRepository;
     private final CategoryRepository categoryRepository;
     private final BookingInspirationImageRepository inspirationImageRepository;
     private final BookingTimelineEventRepository timelineEventRepository;
@@ -57,44 +54,13 @@ public class BookingService {
         User customer = userRepository.findById(customerId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + customerId));
 
-        if (request.portfolioItemId() != null && request.professionalId() == null) {
-            throw new IllegalArgumentException("portfolioItemId requires an explicit professionalId");
-        }
-
-        if (request.requestType() == RequestType.INDIVIDUAL_SERVICE) {
-            if (request.professionalId() != null) {
-                throw new IllegalArgumentException(
-                        "Individual service requests are assigned by Velora, not chosen directly");
-            }
-            if (request.categoryId() == null) {
-                throw new IllegalArgumentException("Individual service requests must specify a category");
-            }
+        if (request.requestType() == RequestType.INDIVIDUAL_SERVICE && request.categoryId() == null) {
+            throw new IllegalArgumentException("Individual service requests must specify a category");
         }
 
         if (request.budgetMin() != null && request.budgetMax() != null
                 && request.budgetMin().compareTo(request.budgetMax()) > 0) {
             throw new IllegalArgumentException("budgetMin cannot be greater than budgetMax");
-        }
-
-        User professional = null;
-        PortfolioItem portfolioItem = null;
-
-        if (request.professionalId() != null) {
-            professional = userRepository.findById(request.professionalId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Professional not found: " + request.professionalId()));
-
-            if (professional.getRole() != Role.PROFESSIONAL) {
-                throw new IllegalArgumentException("Selected user is not a professional");
-            }
-
-            if (request.portfolioItemId() != null) {
-                portfolioItem = portfolioItemRepository.findById(request.portfolioItemId())
-                        .orElseThrow(() -> new ResourceNotFoundException("Portfolio item not found: " + request.portfolioItemId()));
-
-                if (!portfolioItem.getProfessional().getId().equals(professional.getId())) {
-                    throw new IllegalArgumentException("The selected portfolio item does not belong to the selected professional");
-                }
-            }
         }
 
         Category category = null;
@@ -112,8 +78,6 @@ public class BookingService {
 
         Booking booking = Booking.builder()
                 .customer(customer)
-                .professional(professional)
-                .portfolioItem(portfolioItem)
                 .category(category)
                 .requestType(request.requestType())
                 .preferredStyle(request.preferredStyle())
@@ -122,7 +86,7 @@ public class BookingService {
                 .preferredTimeline(request.preferredTimeline())
                 .location(request.location())
                 .scheduledAt(request.scheduledAt())
-                .status(professional != null ? BookingStatus.PENDING : BookingStatus.PENDING_ASSIGNMENT)
+                .status(BookingStatus.PENDING_ASSIGNMENT)
                 .notes(request.notes())
                 .build();
 

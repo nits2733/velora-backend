@@ -15,6 +15,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -26,7 +27,9 @@ import java.math.BigDecimal;
 @RestController
 @RequestMapping("/api/professionals")
 @RequiredArgsConstructor
-@Tag(name = "Professionals", description = "Public professional directory and profiles (public)")
+@PreAuthorize("hasRole('ADMIN')")
+@Tag(name = "Professionals", description = "Professional directory and profiles - admin only; "
+        + "customers never browse or select a professional directly, Velora assigns one")
 public class ProfessionalController {
 
     private static final int MAX_PAGE_SIZE = 50;
@@ -35,7 +38,7 @@ public class ProfessionalController {
     private final ReviewService reviewService;
 
     @GetMapping
-    @Operation(summary = "Search/browse the professional directory with pagination and filters")
+    @Operation(summary = "Search/browse the professional directory with pagination and filters (admin only)")
     public ResponseEntity<PageResponse<ProfessionalSummaryResponse>> search(
             @RequestParam(required = false) String search,
             @RequestParam(required = false) String specialization,
@@ -59,13 +62,13 @@ public class ProfessionalController {
     }
 
     @GetMapping("/{id}")
-    @Operation(summary = "Get a professional's public profile")
+    @Operation(summary = "Get a professional's profile (admin only)")
     public ResponseEntity<ProfessionalPublicProfileResponse> getPublicProfile(@PathVariable Long id) {
         return ResponseEntity.ok(professionalService.getPublicProfile(id));
     }
 
     @GetMapping("/{id}/reviews")
-    @Operation(summary = "List a professional's reviews, newest first")
+    @Operation(summary = "List a professional's reviews, newest first (admin only)")
     public ResponseEntity<PageResponse<PublicReviewResponse>> getReviews(
             @PathVariable Long id,
             @RequestParam(defaultValue = "0") int page,

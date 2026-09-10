@@ -14,18 +14,15 @@ import java.util.List;
 /**
  * requestType distinguishes a Full Home Services project from a standalone
  * Individual Service request - see BookingService.createBooking for the rules this
- * drives. professionalId is optional: present means the customer picked this
- * professional directly (FULL_HOME_PROJECT only); absent means the customer wants
- * Velora to assign one (booking starts in PENDING_ASSIGNMENT until an admin assigns
- * a professional). categoryId/preferredStyle/budgetMin/budgetMax/location feed
+ * drives. Every booking starts in PENDING_ASSIGNMENT - Velora (an admin) always
+ * assigns the professional; a customer never names one directly.
+ * categoryId/preferredStyle/budgetMin/budgetMax/location feed
  * ProfessionalMatchingService's scoring and are required for INDIVIDUAL_SERVICE.
  * inspirationImageUrls are optional moodboard/reference photos uploaded via
  * POST /api/uploads beforehand.
  */
 public record BookingRequest(
         @NotNull RequestType requestType,
-        Long professionalId,
-        Long portfolioItemId,
         @NotNull @Future Instant scheduledAt,
         @Size(max = 1000) String notes,
         Long categoryId,

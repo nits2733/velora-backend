@@ -48,16 +48,17 @@ it works here, with small examples.
 Velora is the backend API for a home-services app. It supports two customer journeys
 under one shared domain model:
 
-- **Full Home Services** — a designer-led, end-to-end interior-design project. The
-  customer either picks a specific professional directly or asks Velora to assign one.
+- **Full Home Services** — a designer-led, end-to-end interior-design project.
 - **Individual Services** — a standalone trade job (painting, plumbing, electrical,
-  carpentry, false ceiling, modular kitchen). Always assigned by Velora, never picked
-  directly by the customer.
+  carpentry, false ceiling, modular kitchen).
+
+Velora is **admin-controlled assignment, not a marketplace**: a customer never browses,
+searches, or names a professional directly, for either request type. Every booking
+starts `PENDING_ASSIGNMENT`; an admin reviews it and assigns a professional.
 
 Three kinds of users interact with the system:
 
-- **Customers** — browse the portfolio catalog, either pick a specific professional to
-  book directly (Full Home Services only) or ask Velora to assign the best-fit one,
+- **Customers** — submit a booking request (no professional/portfolio pick involved),
   receive/respond to line-item quotations after a consultation, and leave a rating once
   the work is done.
 - **Professionals** — one account type covering every trade (interior designer,
@@ -867,9 +868,11 @@ sticky sessions, easy to scale horizontally (any server instance can validate an
 token, since the token itself carries the identity + signature).
 
 **Public GET endpoints today, from `SecurityConfig.PUBLIC_GET_ENDPOINTS`:**
-`/api/portfolio/**`, `/api/categories/**`, `/api/professionals/**` — anyone can browse
-the catalog, categories, and public professional profiles without a token; every other
-endpoint requires one.
+`/api/categories/**`, `/files/**` — anyone can list categories and fetch served files
+without a token. `/api/portfolio/**` and `/api/professionals/**` are deliberately **not**
+public: the admin-controlled assignment model means customers never browse or search
+professionals or portfolios, so both are gated `@PreAuthorize("hasRole('ADMIN')")` at
+the controller instead — every other endpoint requires a token.
 
 ---
 
@@ -1440,10 +1443,10 @@ lifecycle.
 **Booking states:** `PENDING_ASSIGNMENT → PENDING → CONFIRMED → COMPLETED`, with
 `CANCELLED` reachable from `PENDING_ASSIGNMENT`, `PENDING`, or `CONFIRMED`. Once
 `CANCELLED` or `COMPLETED`, a booking is frozen — no further transitions allowed.
-`PENDING_ASSIGNMENT` is where every Individual Service booking starts (there is no
-direct-pick path for that request type at all) and where a Full Home Services booking
-starts if the customer asked Velora to choose; a directly-picked Full Home Services
-booking skips it entirely and starts straight at `PENDING`.
+`PENDING_ASSIGNMENT` is where **every** booking starts, Full Home Services and
+Individual Service alike — there is no direct-pick path at all, the customer never
+names a professional. `PENDING` is only reached once an admin assigns one via
+`PATCH /api/bookings/{id}/assign`.
 
 ```
         ┌────────────────────┐  admin assigns    ┌─────────┐  professional confirms ┌───────────┐  professional marks done ┌───────────┐
@@ -1462,34 +1465,13 @@ booking skips it entirely and starts straight at `PENDING`.
 public BookingResponse createBooking(Long customerId, BookingRequest request) {
     User customer = userRepository.findById(customerId)...
 
-    if (request.portfolioItemId() != null && request.professionalId() == null) {
-        throw new IllegalArgumentException("portfolioItemId requires an explicit professionalId");
+    if (request.requestType() == RequestType.INDIVIDUAL_SERVICE && request.categoryId() == null) {
+        throw new IllegalArgumentException("Individual service requests must specify a category");
     }
 
-    if (request.requestType() == RequestType.INDIVIDUAL_SERVICE) {
-        if (request.professionalId() != null) {
-            throw new IllegalArgumentException(
-                    "Individual service requests are assigned by Velora, not chosen directly");
-        }
-        if (request.categoryId() == null) {
-            throw new IllegalArgumentException("Individual service requests must specify a category");
-        }
-    }
-
-    User professional = null;
-    PortfolioItem portfolioItem = null;
-
-    if (request.professionalId() != null) {
-        professional = userRepository.findById(request.professionalId())...
-        if (professional.getRole() != Role.PROFESSIONAL) {
-            throw new IllegalArgumentException("Selected user is not a professional");
-        }
-        if (request.portfolioItemId() != null) {
-            portfolioItem = portfolioItemRepository.findById(request.portfolioItemId())...
-            if (!portfolioItem.getProfessional().getId().equals(professional.getId())) {
-                throw new IllegalArgumentException("The selected portfolio item does not belong to the selected professional");
-            }
-        }
+    if (request.budgetMin() != null && request.budgetMax() != null
+            && request.budgetMin().compareTo(request.budgetMax()) > 0) {
+        throw new IllegalArgumentException("budgetMin cannot be greater than budgetMax");
     }
 
     Category category = null;
@@ -1503,12 +1485,13 @@ public BookingResponse createBooking(Long customerId, BookingRequest request) {
     }
 
     Booking booking = Booking.builder()
-            .customer(customer).professional(professional).portfolioItem(portfolioItem)
+            .customer(customer)
             .category(category).requestType(request.requestType())
             .preferredStyle(request.preferredStyle())
-            .budget(request.budget()).location(request.location())
+            .budgetMin(request.budgetMin()).budgetMax(request.budgetMax())
+            .location(request.location())
             .scheduledAt(request.scheduledAt())
-            .status(professional != null ? BookingStatus.PENDING : BookingStatus.PENDING_ASSIGNMENT)
+            .status(BookingStatus.PENDING_ASSIGNMENT)
             .notes(request.notes())
             .build();
 
@@ -1517,21 +1500,15 @@ public BookingResponse createBooking(Long customerId, BookingRequest request) {
 ```
 
 Notice the extra business-rule validation that can't be expressed via `@Valid`
-annotations alone (they require cross-referencing the database): confirming the
-target user is actually a professional, confirming a chosen portfolio item actually
-belongs to that professional, rejecting a portfolio-item reference with no
-professional named alongside it (pointing at one specific professional's work while
-asking to be matched with someone else entirely doesn't make sense), rejecting an
-Individual Service request that tries to name a professional directly (that request
-type is *always* Velora-assigned, so a supplied `professionalId` is treated as a
-mistake rather than silently ignored), and cross-checking a supplied category against
-the request type's expected `ServiceGroup` (a Full Home Services booking can't
-reference a standalone trade category, and vice versa). Everything under
-`professionalId != null` is the direct-pick path, only reachable for
-`FULL_HOME_PROJECT`; `category`/`preferredStyle`/`budget`/`location` are the signals
+annotations alone (they require cross-referencing the database): requiring a category
+on an Individual Service request, cross-checking a supplied category against the
+request type's expected `ServiceGroup` (a Full Home Services booking can't reference a
+standalone trade category, and vice versa), and rejecting a mismatched budget range.
+No `professionalId`/`portfolioItemId` exists on `BookingRequest` at all — a customer
+cannot name a professional or point at a specific portfolio item; `category`/
+`preferredStyle`/`budgetMin`/`budgetMax`/`location` are purely the signals
 `ProfessionalMatchingService` scores candidates against (see
-[Professional Assignment & Matching](#17-feature-walkthrough-professional-assignment--matching)),
-and are simply unused dead weight on a direct booking.
+[Professional Assignment & Matching](#17-feature-walkthrough-professional-assignment--matching)).
 
 **The state machine itself** — `validateTransition`:
 
@@ -2276,16 +2253,16 @@ locally), and bumps logging to `DEBUG` (including raw SQL logging via
 | POST | `/api/auth/password/change` | Yes | — | Change your own password, current password required (revokes all sessions) |
 | GET | `/api/users/profile` | Yes | — | Get the current user's own profile (includes availability/rating for professionals) |
 | PUT | `/api/users/profile` | Yes | — | Update the current user's own profile, incl. availability toggle (partial update) |
-| GET | `/api/portfolio` | No | — | Search/browse the portfolio catalog (paginated, filterable) |
-| GET | `/api/portfolio/{id}` | No | — | Get one portfolio item's full details |
+| GET | `/api/portfolio` | Yes | ADMIN | Search/browse the portfolio catalog (paginated, filterable) — assignment context, not customer browsing |
+| GET | `/api/portfolio/{id}` | Yes | ADMIN | Get one portfolio item's full details |
 | POST | `/api/portfolio` | Yes | PROFESSIONAL | Upload a new portfolio item under the caller's own account |
 | PUT | `/api/portfolio/{id}` | Yes | PROFESSIONAL | Replace one of your own portfolio items (full replacement, not a patch) |
 | DELETE | `/api/portfolio/{id}` | Yes | PROFESSIONAL | Delete one of your own portfolio items (blocked while a booking references it) |
 | GET | `/api/categories` | No | — | List all categories (each tagged HOME_PROJECT or INDIVIDUAL_SERVICE) |
-| GET | `/api/professionals` | No | — | Search/browse the professional directory (paginated, filterable) |
-| GET | `/api/professionals/{id}` | No | — | Get one professional's public profile (bio, experience, availability, rating) |
-| GET | `/api/professionals/{id}/reviews` | No | — | List that professional's reviews, newest first (paginated) |
-| POST | `/api/bookings` | Yes | CUSTOMER | Book a Full Home Services project (chosen professional, or none — assignment-requested) or an Individual Service request (always assignment-requested) |
+| GET | `/api/professionals` | Yes | ADMIN | Search/browse the professional directory (paginated, filterable) — used only for admin assignment |
+| GET | `/api/professionals/{id}` | Yes | ADMIN | Get one professional's profile (bio, experience, availability, rating) |
+| GET | `/api/professionals/{id}/reviews` | Yes | ADMIN | List that professional's reviews, newest first (paginated) |
+| POST | `/api/bookings` | Yes | CUSTOMER | Book a Full Home Services project or an Individual Service request — always starts `PENDING_ASSIGNMENT`, never a chosen professional |
 | GET | `/api/bookings` | Yes | — | List the current user's bookings (customer or professional view) |
 | GET | `/api/bookings/{id}` | Yes | — | Get one booking's details (must be a participant) |
 | PATCH | `/api/bookings/{id}/cancel` | Yes | CUSTOMER | Cancel your own booking (PENDING_ASSIGNMENT/PENDING/CONFIRMED) |
@@ -2873,26 +2850,21 @@ Interior-design details: style and/or price sent?
 
 ### 27.7 Booking → [§16](#16-feature-walkthrough-bookings-state-machine)
 
-The request type decides which rules apply: Individual Service work is always assigned by
-Velora (naming a professional is rejected, not ignored), while Full Home Services allows
-a direct pick. Both converge on the same lifecycle once a professional is attached.
+Every booking starts `PENDING_ASSIGNMENT`, regardless of request type — a customer
+never names a professional (there is no `professionalId`/`portfolioItemId` on
+`BookingRequest` at all). Both request types converge on the same lifecycle once an
+admin attaches a professional via `PATCH /api/bookings/{id}/assign`.
 
 ```
 Customer requests a new booking
  (requestType: FULL_HOME_PROJECT or INDIVIDUAL_SERVICE, scheduledAt, optional notes,
-  and either:
-   professionalId (+ optional portfolioItemId)   — direct pick, FULL_HOME_PROJECT only
-   or categoryId/preferredStyle/budget/location   — let Velora choose)
+  categoryId/preferredStyle/budgetMin/budgetMax/location — the signals
+  ProfessionalMatchingService will score candidates against)
         │
         ▼
 Is requestType == INDIVIDUAL_SERVICE?
         │
-        ├── Yes → was a professionalId given?
-        │              │
-        │              ├── Yes → 400 Bad Request
-        │              │         (Velora always assigns Individual Service work)
-        │              ▼
-        │         Was a categoryId given?
+        ├── Yes → Was a categoryId given?
         │              │
         │              ├── No → 400 Bad Request (category required)
         │              ▼
@@ -2902,29 +2874,15 @@ Is requestType == INDIVIDUAL_SERVICE?
         │              ▼
         │         Create booking, status PENDING_ASSIGNMENT
         │
-        ▼
-Was a specific portfolioItem given without naming its professional?
-        │
-        ├── Yes → 400 Bad Request
-        │
-        ▼
-Was a professionalId given?
-        │
-        ├── Yes → is that user actually a PROFESSIONAL?
+        ├── No (FULL_HOME_PROJECT) → Does the category (if any) belong to the HOME_PROJECT group?
         │              │
         │              ├── No → 400 Bad Request
         │              ▼
-        │         Does the optional portfolio item belong to that professional?
+        │         Is budgetMin > budgetMax?
         │              │
-        │              ├── No → 400 Bad Request
+        │              ├── Yes → 400 Bad Request
         │              ▼
-        │         Does the category (if any) belong to the HOME_PROJECT group?
-        │              │
-        │              ├── No → 400 Bad Request
-        │              ▼
-        │         Create booking, status PENDING (professional attached)
-        │
-        ├── No →  Create booking, status PENDING_ASSIGNMENT (no professional yet)
+        │         Create booking, status PENDING_ASSIGNMENT
         │
         ▼
 201 Created

@@ -46,7 +46,8 @@ public class BookingController {
 
     @PostMapping
     @PreAuthorize("hasRole('CUSTOMER')")
-    @Operation(summary = "Create a booking - Full Home Services (with or without a chosen professional) or an Individual Service request")
+    @Operation(summary = "Create a booking - Full Home Services or Individual Service; always starts "
+            + "awaiting admin assignment, the customer never names a professional directly")
     public ResponseEntity<BookingResponse> create(@AuthenticationPrincipal UserPrincipal principal,
                                                    @Valid @RequestBody BookingRequest request) {
         BookingResponse response = bookingService.createBooking(principal.getId(), request);

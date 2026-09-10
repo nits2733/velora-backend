@@ -31,7 +31,9 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/portfolio")
 @RequiredArgsConstructor
-@Tag(name = "Portfolio", description = "Professional work-sample catalog: browse, search, filter (public)")
+@PreAuthorize("hasRole('ADMIN')")
+@Tag(name = "Portfolio", description = "Professional work-sample catalog. Browse/search is admin-only "
+        + "(assignment context); upload/edit/delete stays professional self-service on their own items")
 public class PortfolioItemController {
 
     private static final int MAX_PAGE_SIZE = 50;
@@ -39,7 +41,7 @@ public class PortfolioItemController {
     private final PortfolioItemService portfolioItemService;
 
     @GetMapping
-    @Operation(summary = "Search/browse the portfolio catalog with pagination and filters")
+    @Operation(summary = "Search/browse the portfolio catalog with pagination and filters (admin only)")
     public ResponseEntity<PageResponse<PortfolioItemSummaryResponse>> search(
             @RequestParam(required = false) Long category,
             @RequestParam(required = false) String search,
@@ -59,7 +61,7 @@ public class PortfolioItemController {
     }
 
     @GetMapping("/{id}")
-    @Operation(summary = "Get portfolio item details by id")
+    @Operation(summary = "Get portfolio item details by id (admin only)")
     public ResponseEntity<PortfolioItemResponse> getById(@PathVariable Long id) {
         return ResponseEntity.ok(portfolioItemService.getById(id));
     }

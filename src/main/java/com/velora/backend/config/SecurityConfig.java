@@ -30,10 +30,14 @@ import java.util.List;
 @RequiredArgsConstructor
 public class SecurityConfig {
 
+    /**
+     * {@code /api/portfolio/**} and {@code /api/professionals/**} are deliberately NOT
+     * here - the admin-controlled assignment model means customers never browse or
+     * search professionals/portfolios directly; those GETs are now admin-only via
+     * {@code @PreAuthorize} on their controllers.
+     */
     private static final String[] PUBLIC_GET_ENDPOINTS = {
-            "/api/portfolio/**",
             "/api/categories/**",
-            "/api/professionals/**",
             "/files/**"
     };
 

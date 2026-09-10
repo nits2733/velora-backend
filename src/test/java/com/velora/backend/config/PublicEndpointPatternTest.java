@@ -11,8 +11,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * The public-browsing rules in {@link SecurityConfig} are written as {@code /api/x/**}.
  * Collection endpoints sit at the bare {@code /api/x} with no trailing segment, so this
  * pins the behaviour that {@code /**} also matches zero segments - otherwise the
- * professional directory and portfolio catalog would demand a token despite being listed
- * as public, which no service-level test would catch.
+ * category list would demand a token despite being listed as public, which no
+ * service-level test would catch. {@code /api/professionals/**} and
+ * {@code /api/portfolio/**} are deliberately not covered here any more - the
+ * admin-controlled assignment model moved both to admin-only.
  */
 class PublicEndpointPatternTest {
 
@@ -20,21 +22,17 @@ class PublicEndpointPatternTest {
 
     @Test
     void publicGetPatternsMatchTheirCollectionEndpoints() {
-        assertThat(matches("/api/professionals/**", "/api/professionals")).isTrue();
-        assertThat(matches("/api/portfolio/**", "/api/portfolio")).isTrue();
         assertThat(matches("/api/categories/**", "/api/categories")).isTrue();
     }
 
     @Test
     void publicGetPatternsStillMatchTheirNestedEndpoints() {
-        assertThat(matches("/api/professionals/**", "/api/professionals/7")).isTrue();
-        assertThat(matches("/api/portfolio/**", "/api/portfolio/42")).isTrue();
+        assertThat(matches("/api/categories/**", "/api/categories/7")).isTrue();
     }
 
     @Test
     void publicGetPatternsDoNotLeakIntoOtherResources() {
-        assertThat(matches("/api/professionals/**", "/api/bookings")).isFalse();
-        assertThat(matches("/api/portfolio/**", "/api/portfolios")).isFalse();
+        assertThat(matches("/api/categories/**", "/api/bookings")).isFalse();
     }
 
     private boolean matches(String pattern, String path) {

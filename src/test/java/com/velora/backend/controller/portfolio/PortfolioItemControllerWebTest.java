@@ -36,9 +36,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Portfolio is the one resource with both public reads and role-restricted writes, so
- * this is where the read/write access split gets pinned - plus the query-parameter
- * clamping that only exists in the controller.
+ * Portfolio browsing is admin-only under the admin-controlled assignment model (a
+ * customer never picks a professional/portfolio item directly); upload/edit/delete
+ * stays professional self-service on their own items. This is where that read/write
+ * access split gets pinned - plus the query-parameter clamping that only exists in the
+ * controller.
  */
 @WebMvcTest(PortfolioItemController.class)
 @WebLayerTest
@@ -51,11 +53,30 @@ class PortfolioItemControllerWebTest {
     private PortfolioItemService portfolioItemService;
 
     @Test
-    void browsingTheCatalogNeedsNoToken() throws Exception {
+    void browsingTheCatalogIsClosedToAnonymousCallers() throws Exception {
+        mockMvc.perform(get("/api/portfolio"))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(portfolioItemService);
+    }
+
+    @Test
+    void browsingTheCatalogIsClosedToCustomersAndProfessionals() throws Exception {
+        mockMvc.perform(get("/api/portfolio").with(as(1L, Role.CUSTOMER)))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/api/portfolio").with(as(9L, Role.PROFESSIONAL)))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(portfolioItemService);
+    }
+
+    @Test
+    void browsingTheCatalogWithAnAdminTokenWorks() throws Exception {
         when(portfolioItemService.search(any(), any(), any(), any(Pageable.class)))
                 .thenReturn(new PageResponse<>(List.of(), 0, 20, 0, 0, true));
 
-        mockMvc.perform(get("/api/portfolio"))
+        mockMvc.perform(get("/api/portfolio").with(as(3L, Role.ADMIN)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content").isArray());
     }
@@ -65,7 +86,7 @@ class PortfolioItemControllerWebTest {
         when(portfolioItemService.search(any(), any(), any(), any(Pageable.class)))
                 .thenReturn(new PageResponse<>(List.of(), 0, 50, 0, 0, true));
 
-        mockMvc.perform(get("/api/portfolio").param("size", "5000").param("page", "-3"))
+        mockMvc.perform(get("/api/portfolio").with(as(3L, Role.ADMIN)).param("size", "5000").param("page", "-3"))
                 .andExpect(status().isOk());
 
         ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
@@ -79,7 +100,7 @@ class PortfolioItemControllerWebTest {
         when(portfolioItemService.search(any(), any(), any(), any(Pageable.class)))
                 .thenReturn(new PageResponse<>(List.of(), 0, 20, 0, 0, true));
 
-        mockMvc.perform(get("/api/portfolio").param("sortBy", "'; DROP TABLE portfolio_items--"))
+        mockMvc.perform(get("/api/portfolio").with(as(3L, Role.ADMIN)).param("sortBy", "'; DROP TABLE portfolio_items--"))
                 .andExpect(status().isOk());
 
         ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);

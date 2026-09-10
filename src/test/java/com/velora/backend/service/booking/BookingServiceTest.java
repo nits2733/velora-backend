@@ -20,7 +20,6 @@ import com.velora.backend.repository.booking.BookingInspirationImageRepository;
 import com.velora.backend.repository.booking.BookingRepository;
 import com.velora.backend.repository.booking.BookingTimelineEventRepository;
 import com.velora.backend.repository.portfolio.CategoryRepository;
-import com.velora.backend.repository.portfolio.PortfolioItemRepository;
 import com.velora.backend.repository.user.UserRepository;
 import com.velora.backend.util.PageResponse;
 import org.junit.jupiter.api.BeforeEach;
@@ -51,8 +50,6 @@ class BookingServiceTest {
     @Mock
     private UserRepository userRepository;
     @Mock
-    private PortfolioItemRepository portfolioItemRepository;
-    @Mock
     private CategoryRepository categoryRepository;
     @Mock
     private BookingInspirationImageRepository inspirationImageRepository;
@@ -70,7 +67,7 @@ class BookingServiceTest {
 
     @BeforeEach
     void setUp() {
-        bookingService = new BookingService(bookingRepository, userRepository, portfolioItemRepository,
+        bookingService = new BookingService(bookingRepository, userRepository,
                 categoryRepository, inspirationImageRepository, timelineEventRepository, bookingMapper, eventRecorder);
 
         customer = User.builder().id(1L).email("customer@velora.test").fullName("Cust").role(Role.CUSTOMER).build();
@@ -79,43 +76,9 @@ class BookingServiceTest {
                 .id(1L).user(professional).availabilityStatus(AvailabilityStatus.AVAILABLE).ratingCount(0).build());
     }
 
-    private BookingRequest requestFor(RequestType requestType, Long professionalId, Long portfolioItemId,
-                                       String notes, Long categoryId, String location) {
-        return new BookingRequest(requestType, professionalId, portfolioItemId,
+    private BookingRequest requestFor(RequestType requestType, String notes, Long categoryId, String location) {
+        return new BookingRequest(requestType,
                 Instant.now().plus(1, ChronoUnit.DAYS), notes, categoryId, null, null, null, null, location, null);
-    }
-
-    @Test
-    void createBookingRejectsNonProfessionalTarget() {
-        User notProfessional = User.builder().id(3L).fullName("X").role(Role.CUSTOMER).build();
-        when(userRepository.findById(1L)).thenReturn(Optional.of(customer));
-        when(userRepository.findById(3L)).thenReturn(Optional.of(notProfessional));
-
-        BookingRequest request = requestFor(RequestType.FULL_HOME_PROJECT, 3L, null, null, null, null);
-
-        assertThatThrownBy(() -> bookingService.createBooking(1L, request))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("not a professional");
-    }
-
-    @Test
-    void createBookingSucceedsForValidProfessional() {
-        when(userRepository.findById(1L)).thenReturn(Optional.of(customer));
-        when(userRepository.findById(2L)).thenReturn(Optional.of(professional));
-        when(bookingRepository.save(any(Booking.class))).thenAnswer(inv -> {
-            Booking b = inv.getArgument(0);
-            b.setId(100L);
-            b.setCreatedAt(Instant.now());
-            return b;
-        });
-
-        BookingRequest request = requestFor(RequestType.FULL_HOME_PROJECT, 2L, null, "please call ahead", null, null);
-
-        BookingResponse response = bookingService.createBooking(1L, request);
-
-        assertThat(response.id()).isEqualTo(100L);
-        assertThat(response.status()).isEqualTo(BookingStatus.PENDING);
-        assertThat(response.professional().id()).isEqualTo(2L);
     }
 
     @Test
@@ -165,7 +128,7 @@ class BookingServiceTest {
     }
 
     @Test
-    void createBookingWithoutProfessionalIdStartsAwaitingAssignment() {
+    void createBookingAlwaysStartsAwaitingAssignment() {
         when(userRepository.findById(1L)).thenReturn(Optional.of(customer));
         when(bookingRepository.save(any(Booking.class))).thenAnswer(inv -> {
             Booking b = inv.getArgument(0);
@@ -174,7 +137,7 @@ class BookingServiceTest {
             return b;
         });
 
-        BookingRequest request = requestFor(RequestType.FULL_HOME_PROJECT, null, null, null, null, null);
+        BookingRequest request = requestFor(RequestType.FULL_HOME_PROJECT, null, null, null);
 
         BookingResponse response = bookingService.createBooking(1L, request);
 
@@ -183,21 +146,10 @@ class BookingServiceTest {
     }
 
     @Test
-    void createBookingRejectsPortfolioItemIdWithoutProfessionalId() {
-        when(userRepository.findById(1L)).thenReturn(Optional.of(customer));
-
-        BookingRequest request = requestFor(RequestType.FULL_HOME_PROJECT, null, 5L, null, null, null);
-
-        assertThatThrownBy(() -> bookingService.createBooking(1L, request))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("portfolioItemId requires an explicit professionalId");
-    }
-
-    @Test
     void createBookingRejectsMismatchedBudgetRange() {
         when(userRepository.findById(1L)).thenReturn(Optional.of(customer));
 
-        BookingRequest request = new BookingRequest(RequestType.FULL_HOME_PROJECT, null, null,
+        BookingRequest request = new BookingRequest(RequestType.FULL_HOME_PROJECT,
                 Instant.now().plus(1, ChronoUnit.DAYS), null, null, null,
                 new java.math.BigDecimal("500000"), new java.math.BigDecimal("100000"), null, null, null);
 
@@ -258,21 +210,10 @@ class BookingServiceTest {
     }
 
     @Test
-    void createBookingRejectsIndividualServiceWithExplicitProfessionalId() {
-        when(userRepository.findById(1L)).thenReturn(Optional.of(customer));
-
-        BookingRequest request = requestFor(RequestType.INDIVIDUAL_SERVICE, 2L, null, null, 3L, null);
-
-        assertThatThrownBy(() -> bookingService.createBooking(1L, request))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("assigned by Velora");
-    }
-
-    @Test
     void createBookingRejectsIndividualServiceWithoutCategory() {
         when(userRepository.findById(1L)).thenReturn(Optional.of(customer));
 
-        BookingRequest request = requestFor(RequestType.INDIVIDUAL_SERVICE, null, null, null, null, null);
+        BookingRequest request = requestFor(RequestType.INDIVIDUAL_SERVICE, null, null, null);
 
         assertThatThrownBy(() -> bookingService.createBooking(1L, request))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -285,7 +226,7 @@ class BookingServiceTest {
         Category homeCategory = Category.builder().id(4L).name("Kitchen").serviceGroup(ServiceGroup.HOME_PROJECT).build();
         when(categoryRepository.findById(4L)).thenReturn(Optional.of(homeCategory));
 
-        BookingRequest request = requestFor(RequestType.INDIVIDUAL_SERVICE, null, null, null, 4L, null);
+        BookingRequest request = requestFor(RequestType.INDIVIDUAL_SERVICE, null, 4L, null);
 
         assertThatThrownBy(() -> bookingService.createBooking(1L, request))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -304,7 +245,7 @@ class BookingServiceTest {
             return b;
         });
 
-        BookingRequest request = requestFor(RequestType.INDIVIDUAL_SERVICE, null, null, "leaking tap", 5L, "Mumbai");
+        BookingRequest request = requestFor(RequestType.INDIVIDUAL_SERVICE, "leaking tap", 5L, "Mumbai");
 
         BookingResponse response = bookingService.createBooking(1L, request);
 
