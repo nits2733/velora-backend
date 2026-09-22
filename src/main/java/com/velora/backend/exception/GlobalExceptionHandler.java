@@ -84,6 +84,11 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.BAD_REQUEST, ex.getMessage(), req, null);
     }
 
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<ApiErrorResponse> handleIllegalState(IllegalStateException ex, HttpServletRequest req) {
+        return build(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage(), req, null);
+    }
+
     /**
      * A path variable or query parameter that can't be converted to its declared type -
      * {@code /api/portfolio/abc}, {@code ?availability=MAYBE}. That's a malformed request,

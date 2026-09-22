@@ -321,4 +321,27 @@ class AuthControllerWebTest {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.message").value("Invalid email or password"));
     }
+
+    /**
+     * Pre-coding TDD: when GOOGLE_CLIENT_ID is not configured, authService.googleLogin throws
+     * IllegalStateException. That exception currently falls through to the catch-all Exception
+     * handler and becomes HTTP 500 with no ApiErrorResponse. After the fix, GlobalExceptionHandler
+     * must map IllegalStateException to 503 SERVICE_UNAVAILABLE with a structured ApiErrorResponse.
+     *
+     * This test MUST FAIL before the fix (returns 500) and pass after it (returns 503).
+     */
+    @Test
+    void googleLoginWhenNotConfiguredSurfacesAs503NotA500() throws Exception {
+        when(authService.googleLogin(any(com.velora.backend.dto.auth.GoogleLoginRequest.class)))
+                .thenThrow(new IllegalStateException(
+                        "app.google.client-id (GOOGLE_CLIENT_ID) is not configured - Google Sign-In is disabled"));
+
+        mockMvc.perform(post("/api/auth/google")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"idToken":"some-token"}
+                                """))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.message").exists());
+    }
 }
