@@ -8,12 +8,23 @@ import com.velora.backend.entity.portfolio.InteriorDesignDetails;
 import com.velora.backend.entity.portfolio.PortfolioItem;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
+
 @Component
 public class PortfolioItemMapper {
 
     public CategoryResponse toCategoryResponse(Category category) {
         return new CategoryResponse(category.getId(), category.getName(), category.getDescription(),
-                category.getServiceGroup(), category.getImageUrl());
+                category.getServiceGroup(), category.getImageUrl(),
+                category.getParent() != null ? category.getParent().getId() : null, List.of());
+    }
+
+    public CategoryResponse toCategoryTreeResponse(Category category) {
+        List<CategoryResponse> children = category.getSubcategories() == null ? List.of()
+                : category.getSubcategories().stream().map(this::toCategoryResponse).toList();
+        return new CategoryResponse(category.getId(), category.getName(), category.getDescription(),
+                category.getServiceGroup(), category.getImageUrl(),
+                category.getParent() != null ? category.getParent().getId() : null, children);
     }
 
     public PortfolioItemSummaryResponse toSummaryResponse(PortfolioItem item) {

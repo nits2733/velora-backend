@@ -4,6 +4,7 @@ import com.velora.backend.dto.booking.ProfessionalMatchResponse;
 import com.velora.backend.entity.professional.AvailabilityStatus;
 import com.velora.backend.entity.booking.Booking;
 import com.velora.backend.entity.booking.BookingStatus;
+import com.velora.backend.entity.portfolio.Category;
 import com.velora.backend.entity.portfolio.InteriorDesignDetails;
 import com.velora.backend.entity.portfolio.PortfolioItem;
 import com.velora.backend.entity.professional.ProfessionalProfile;
@@ -18,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
@@ -86,7 +88,8 @@ public class ProfessionalMatchingService {
         String lowerSpecialization = specialization.toLowerCase();
 
         boolean matchesCategory = booking.getCategory() != null
-                && lowerSpecialization.contains(booking.getCategory().getName().toLowerCase());
+                && (lowerSpecialization.contains(booking.getCategory().getName().toLowerCase())
+                || lowerSpecialization.contains(booking.getCategory().getRoot().getName().toLowerCase()));
         boolean matchesStyle = booking.getPreferredStyle() != null && !booking.getPreferredStyle().isBlank()
                 && lowerSpecialization.contains(booking.getPreferredStyle().toLowerCase());
 
@@ -96,7 +99,7 @@ public class ProfessionalMatchingService {
     private int portfolioScore(Long professionalId, Booking booking) {
         int score = 0;
         if (booking.getCategory() != null
-                && portfolioItemRepository.countByProfessionalIdAndCategoryId(professionalId, booking.getCategory().getId()) > 0) {
+                && portfolioItemRepository.countByProfessionalIdAndCategoryIdIn(professionalId, categoryFamilyIds(booking.getCategory())) > 0) {
             score += 10;
         }
         if (booking.getPreferredStyle() != null && !booking.getPreferredStyle().isBlank()
@@ -104,6 +107,15 @@ public class ProfessionalMatchingService {
             score += 10;
         }
         return score;
+    }
+
+    /** Root category plus all its subcategories: work anywhere in the trade counts as evidence. */
+    private List<Long> categoryFamilyIds(Category category) {
+        Category root = category.getRoot();
+        List<Long> ids = new ArrayList<>();
+        ids.add(root.getId());
+        root.getSubcategories().forEach(sub -> ids.add(sub.getId()));
+        return ids;
     }
 
     private int experienceScore(ProfessionalProfile profile) {

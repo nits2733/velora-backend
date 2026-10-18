@@ -289,4 +289,43 @@ class BookingServiceTest {
         assertThat(page.content()).isEmpty();
         assertThat(page.totalElements()).isZero();
     }
+    @Test
+    void createBookingAcceptsSubcategoryWhoseRootMatchesRequestType() {
+        when(userRepository.findById(1L)).thenReturn(Optional.of(customer));
+        Category root = Category.builder().id(10L).name("Kitchen").serviceGroup(ServiceGroup.HOME_PROJECT).build();
+        // child serviceGroup deliberately null: the check must read the ROOT group
+        Category child = Category.builder().id(11L).name("Modular").parent(root).build();
+        when(categoryRepository.findById(11L)).thenReturn(Optional.of(child));
+        when(bookingRepository.save(any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        BookingResponse response = bookingService.createBooking(1L,
+                requestFor(RequestType.FULL_HOME_PROJECT, "notes", 11L, "Mumbai"));
+
+        assertThat(response).isNotNull();
+    }
+
+    @Test
+    void createBookingAcceptsTopLevelCategoryAsBefore() {
+        when(userRepository.findById(1L)).thenReturn(Optional.of(customer));
+        Category root = Category.builder().id(10L).name("Kitchen").serviceGroup(ServiceGroup.HOME_PROJECT).build();
+        when(categoryRepository.findById(10L)).thenReturn(Optional.of(root));
+        when(bookingRepository.save(any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        assertThat(bookingService.createBooking(1L,
+                requestFor(RequestType.FULL_HOME_PROJECT, "notes", 10L, "Mumbai"))).isNotNull();
+    }
+
+    @Test
+    void createBookingRejectsSubcategoryWhoseRootGroupMismatchesRequestType() {
+        when(userRepository.findById(1L)).thenReturn(Optional.of(customer));
+        Category root = Category.builder().id(10L).name("Kitchen").serviceGroup(ServiceGroup.HOME_PROJECT).build();
+        // child claims the matching group itself, but the root decides
+        Category child = Category.builder().id(11L).name("Modular")
+                .serviceGroup(ServiceGroup.INDIVIDUAL_SERVICE).parent(root).build();
+        when(categoryRepository.findById(11L)).thenReturn(Optional.of(child));
+
+        assertThatThrownBy(() -> bookingService.createBooking(1L,
+                requestFor(RequestType.INDIVIDUAL_SERVICE, "notes", 11L, "Mumbai")))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
 }

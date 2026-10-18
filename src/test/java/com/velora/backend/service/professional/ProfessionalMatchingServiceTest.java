@@ -27,6 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
@@ -86,7 +87,7 @@ class ProfessionalMatchingServiceTest {
 
         when(professionalProfileRepository.findByAvailabilityStatus(AvailabilityStatus.AVAILABLE))
                 .thenReturn(List.of(nonMatchingProfile, matchingProfile));
-        when(portfolioItemRepository.countByProfessionalIdAndCategoryId(anyLong(), any())).thenReturn(0L);
+        when(portfolioItemRepository.countByProfessionalIdAndCategoryIdIn(anyLong(), any())).thenReturn(0L);
 
         List<ProfessionalMatchResponse> results = matchingService.recommend(51L);
 
@@ -139,5 +140,66 @@ class ProfessionalMatchingServiceTest {
         List<ProfessionalMatchResponse> results = matchingService.recommend(53L);
 
         assertThat(results.get(0).professionalId()).isEqualTo(14L);
+    }
+    private int scoreOfSingleCandidate(Category category, String specialization, long bookingId) {
+        Booking booking = Booking.builder()
+                .id(bookingId).customer(customer).professional(null)
+                .status(BookingStatus.PENDING_ASSIGNMENT).scheduledAt(Instant.now())
+                .category(category).build();
+        when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(booking));
+        User u = User.builder().id(20L).fullName("P20").role(Role.PROFESSIONAL).build();
+        ProfessionalProfile profile = ProfessionalProfile.builder().id(120L).user(u)
+                .specialization(specialization).availabilityStatus(AvailabilityStatus.AVAILABLE).build();
+        when(professionalProfileRepository.findByAvailabilityStatus(AvailabilityStatus.AVAILABLE))
+                .thenReturn(List.of(profile));
+        return matchingService.recommend(bookingId).get(0).score();
+    }
+
+    @Test
+    void recommendMatchesSpecializationAgainstRootCategoryNameForSubcategory() {
+        Category child = Category.builder().id(31L).name("Modular").parent(kitchenCategory).build();
+        int withRootMatch = scoreOfSingleCandidate(child, "Kitchen Renovations", 60L);
+        org.mockito.Mockito.reset(bookingRepository, professionalProfileRepository);
+        int withoutMatch = scoreOfSingleCandidate(child, "Bedroom Design", 61L);
+
+        assertThat(withRootMatch - withoutMatch).isEqualTo(30);
+    }
+
+    @Test
+    void recommendStillMatchesSpecializationAgainstSubcategoryOwnName() {
+        Category child = Category.builder().id(31L).name("Modular").parent(kitchenCategory).build();
+        int withOwnMatch = scoreOfSingleCandidate(child, "Modular Specialist", 62L);
+        org.mockito.Mockito.reset(bookingRepository, professionalProfileRepository);
+        int withoutMatch = scoreOfSingleCandidate(child, "Bedroom Design", 63L);
+
+        assertThat(withOwnMatch - withoutMatch).isEqualTo(30);
+    }
+
+    @Test
+    void recommendCountsPortfolioEvidenceAcrossRootAndSiblingSubcategories() {
+        Category modular = Category.builder().id(31L).name("Modular").parent(kitchenCategory).build();
+        Category island = Category.builder().id(32L).name("Island").parent(kitchenCategory).build();
+        kitchenCategory.setSubcategories(List.of(modular, island));
+
+        Booking booking = Booking.builder()
+                .id(70L).customer(customer).professional(null)
+                .status(BookingStatus.PENDING_ASSIGNMENT).scheduledAt(Instant.now())
+                .category(modular).build();
+        when(bookingRepository.findById(70L)).thenReturn(Optional.of(booking));
+        User u = User.builder().id(30L).fullName("P30").role(Role.PROFESSIONAL).build();
+        ProfessionalProfile profile = ProfessionalProfile.builder().id(130L).user(u)
+                .availabilityStatus(AvailabilityStatus.AVAILABLE).build();
+        when(professionalProfileRepository.findByAvailabilityStatus(AvailabilityStatus.AVAILABLE))
+                .thenReturn(List.of(profile));
+        // Work exists only in a sibling subcategory (or the parent), not in "Modular" itself
+        when(portfolioItemRepository.countByProfessionalIdAndCategoryIdIn(eq(30L), argThat(ids ->
+                ids.containsAll(List.of(3L, 31L, 32L)) && ids.size() == 3))).thenReturn(1L);
+
+        int withEvidence = matchingService.recommend(70L).get(0).score();
+
+        org.mockito.Mockito.reset(bookingRepository, professionalProfileRepository, portfolioItemRepository);
+        int withoutEvidence = scoreOfSingleCandidate(modular, null, 71L);
+
+        assertThat(withEvidence - withoutEvidence).isEqualTo(10);
     }
 }

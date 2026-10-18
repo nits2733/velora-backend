@@ -314,7 +314,11 @@ candidates while assigning a booking.
 
 | Method | Path | Role | Description |
 |---|---|---|---|
-| GET | `/categories` | public | List all categories (each tagged HOME_PROJECT or INDIVIDUAL_SERVICE) |
+| GET | `/categories` | public | Top-level categories only (tagged HOME_PROJECT or INDIVIDUAL_SERVICE), each with a nested `subcategories` array (empty for leaves) and `parentId` (omitted for top-level). Max two levels. Cached; evicted on every write |
+| POST | `/categories` | ADMIN | Create a category (`name`, `description`, `serviceGroup`, `imageUrl`, `parentId`). `serviceGroup` required for top-level; subcategories inherit the parent's group (any supplied value is ignored). 409 on duplicate sibling name |
+| PUT | `/categories/{id}` | ADMIN | Update/re-parent a category. Full-replace semantics, except an omitted `imageUrl` keeps the current image (use PATCH `/image` to change it). Changing a group does not rewrite existing bookings/portfolio items. 400 for self-parent, parent that is itself a subcategory, or making a category with children into a child |
+| DELETE | `/categories/{id}` | ADMIN | 204; 409 if it has subcategories, bookings, or portfolio items |
+| PATCH | `/categories/{id}/image` | ADMIN | Set the category image URL |
 | GET | `/portfolio?category=&search=&style=&page=&size=&sortBy=&direction=` | ADMIN | Paginated/filterable portfolio catalog — admin assignment context, not customer browsing |
 | GET | `/portfolio/{id}` | ADMIN | Portfolio item detail |
 | POST | `/portfolio` | PROFESSIONAL | Upload a new portfolio item under the caller's own account; `styleTag`/`priceEstimate` are optional — supplying either creates the item's `InteriorDesignDetails` satellite, omitting both leaves it a plain generic item |
@@ -388,6 +392,8 @@ migration, is a new `V{n}__description.sql` file.
 | V7 | `rename_designer_to_professional_and_add_request_types.sql` | Renames role `DESIGNER`→`PROFESSIONAL`, `designer_profiles`→`professional_profiles`, every `designer_id` column→`professional_id`; adds `bookings.request_type` and `categories.service_group`; seeds the six Individual Service trade categories |
 | V8 | `generalize_design_to_portfolio_item.sql` | Renames `designs`→`portfolio_items`, `bookings.design_id`→`portfolio_item_id`; splits `style_tag`/`price_estimate` into a new optional `interior_design_details` satellite table |
 
+| V21 | `category_hierarchy.sql` | Adds `categories.parent_id` (self-FK, two-level taxonomy); replaces `UNIQUE(name)` with `UNIQUE(parent_id, name)` plus a partial unique index on `name WHERE parent_id IS NULL`. Schema only: subcategory seed content is still pending the product doc |
+
 ## 💡 Design Notes / Extensibility
 
 > **`PortfolioItem` + optional `InteriorDesignDetails`, not one flat table.**
@@ -428,7 +434,7 @@ migration, is a new `V{n}__description.sql` file.
 | Factor | Points |
 |---|---:|
 | Specialization / category match | 30 |
-| Portfolio evidence (category 10 + style 10) | 20 |
+| Portfolio evidence (category 10, any work under the same root category or its subcategories + style 10) | 20 |
 | Experience (capped at 10 years) | 15 |
 | Location match | 15 |
 | Rating (unrated professionals get a neutral 3.0/5, not zero) | 15 |

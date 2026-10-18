@@ -204,6 +204,9 @@ src/main/resources/
     └── V8__generalize_design_to_portfolio_item.sql
            # designs→portfolio_items, bookings.design_id→portfolio_item_id;
            # splits style_tag/price_estimate into a new interior_design_details table
+    └── V21__category_hierarchy.sql
+           # categories.parent_id self-FK (two levels), UNIQUE(parent_id, name) + partial
+           # unique index on top-level names. Schema only; subcategory seed pending product doc
 ```
 
 **Why this layered structure?**
@@ -557,6 +560,13 @@ established (see below).
 - `Category.serviceGroup` (`@Enumerated(STRING)`, added in `V7`) tags every category as
   `HOME_PROJECT` or `INDIVIDUAL_SERVICE` — this is what `BookingService` checks a
   booking's chosen category against its `requestType`.
+- `Category.parent` / `Category.subcategories` (`V21`) — optional self-reference, max two
+  levels, enforced in `CategoryService` (admin CRUD: `POST/PUT/DELETE /api/categories`).
+  Subcategories store `serviceGroup` equal to the parent's. `GET /api/categories` returns
+  top-level categories with nested `subcategories`, loaded via one `@EntityGraph` query
+  and cached as DTOs (evicted on every write). `BookingService` and
+  `ProfessionalMatchingService` resolve through `Category.getRoot()`; matching also
+  considers the category's own name.
 - `Quotation.booking` — `@OneToOne`, mirroring `ProfessionalProfile.user`.
 - `Quotation.lineItems` — `@OneToMany(mappedBy = "quotation", cascade = CascadeType.ALL, orphanRemoval = true)`.
   Because a quotation's line items have no independent existence (they only make sense
@@ -1617,7 +1627,7 @@ Two things worth noting before the scoring itself:
 | Factor | Points | What it checks |
 |---|---|---|
 | Specialization / category match | 30 | Does `ProfessionalProfile.specialization` mention the booking's category name or preferred style (case-insensitive)? |
-| Portfolio evidence — category | 10 | Does this professional's own portfolio (`PortfolioItem` rows) contain any work in the booking's category? (`countByProfessionalIdAndCategoryId`) |
+| Portfolio evidence — category | 10 | Does this professional's own portfolio (`PortfolioItem` rows) contain any work in the booking's category? (`countByProfessionalIdAndCategoryIdIn`, over the booking category's root plus all its subcategories) |
 | Portfolio evidence — style | 10 | Does this professional's own portfolio contain any *interior-design* work tagged with the booking's preferred style? (`countByProfessionalIdAndInteriorDesignDetailsStyleTagIgnoreCase`, traversing the optional `InteriorDesignDetails` satellite) |
 | Experience | 15 | `min(yearsExperience, 10) / 10.0 * 15` — more experience helps, but caps out rather than letting a 30-year veteran dominate every score. |
 | Location | 15 | Does `ProfessionalProfile.city` match the booking's `location`? |

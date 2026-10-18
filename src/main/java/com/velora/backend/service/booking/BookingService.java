@@ -71,7 +71,7 @@ public class BookingService {
             ServiceGroup expectedGroup = request.requestType() == RequestType.INDIVIDUAL_SERVICE
                     ? ServiceGroup.INDIVIDUAL_SERVICE
                     : ServiceGroup.HOME_PROJECT;
-            if (category.getServiceGroup() != expectedGroup) {
+            if (category.getRoot().getServiceGroup() != expectedGroup) {
                 throw new IllegalArgumentException("Selected category does not match the request type");
             }
         }
