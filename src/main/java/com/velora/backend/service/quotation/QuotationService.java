@@ -12,7 +12,6 @@ import com.velora.backend.entity.quotation.QuotationStatus;
 import com.velora.backend.entity.user.Role;
 import com.velora.backend.exception.InvalidStateTransitionException;
 import com.velora.backend.exception.ResourceNotFoundException;
-import com.velora.backend.exception.UnauthorizedActionException;
 import com.velora.backend.mapper.quotation.QuotationMapper;
 import com.velora.backend.repository.booking.BookingRepository;
 import com.velora.backend.repository.quotation.QuotationRepository;
@@ -38,7 +37,9 @@ public class QuotationService {
     @Transactional
     public QuotationResponse saveDraft(Long professionalId, Long bookingId, SaveQuotationRequest request) {
         Booking booking = findBooking(bookingId);
-        assertIsAssignedProfessional(professionalId, booking);
+        if (!isAssignedProfessional(professionalId, booking)) {
+            throw bookingNotFound(bookingId);
+        }
 
         Quotation quotation = quotationRepository.findByBookingId(bookingId)
                 .orElseGet(() -> Quotation.builder()
@@ -61,7 +62,9 @@ public class QuotationService {
     @Transactional
     public QuotationResponse send(Long professionalId, Long bookingId) {
         Quotation quotation = findQuotationByBooking(bookingId);
-        assertIsAssignedProfessional(professionalId, quotation.getBooking());
+        if (!isAssignedProfessional(professionalId, quotation.getBooking())) {
+            throw quotationNotFound(bookingId);
+        }
 
         if (quotation.getStatus() != QuotationStatus.DRAFT) {
             throw new InvalidStateTransitionException("Only a draft quotation can be sent");
@@ -102,7 +105,9 @@ public class QuotationService {
     @Transactional(readOnly = true)
     public QuotationResponse get(Long userId, Long bookingId) {
         Quotation quotation = findQuotationByBooking(bookingId);
-        assertParticipant(userId, quotation.getBooking());
+        if (!isParticipant(userId, quotation.getBooking())) {
+            throw quotationNotFound(bookingId);
+        }
         if (quotation.getStatus() == QuotationStatus.DRAFT && quotation.getBooking().getCustomer().getId().equals(userId)) {
             // Same error as "no quotation yet", so a customer cannot tell a draft exists.
             throw quotationNotFound(bookingId);
@@ -114,7 +119,7 @@ public class QuotationService {
         Quotation quotation = findQuotationByBooking(bookingId);
 
         if (!quotation.getBooking().getCustomer().getId().equals(customerId)) {
-            throw new UnauthorizedActionException("Only the customer on this booking can respond to its quotation");
+            throw quotationNotFound(bookingId);
         }
         if (quotation.getStatus() != QuotationStatus.SENT) {
             throw new InvalidStateTransitionException("Only a sent quotation can be accepted or rejected");
@@ -151,26 +156,26 @@ public class QuotationService {
         quotation.setTotalAmount(total);
     }
 
-    private void assertIsAssignedProfessional(Long professionalId, Booking booking) {
-        if (booking.getProfessional() == null) {
-            throw new UnauthorizedActionException("This booking has no assigned professional yet");
-        }
-        if (!booking.getProfessional().getId().equals(professionalId)) {
-            throw new UnauthorizedActionException("Only the professional assigned to this booking can manage its quotation");
-        }
+    private boolean isAssignedProfessional(Long professionalId, Booking booking) {
+        return booking.getProfessional() != null && booking.getProfessional().getId().equals(professionalId);
     }
 
-    private void assertParticipant(Long userId, Booking booking) {
-        boolean isParticipant = booking.getCustomer().getId().equals(userId)
-                || (booking.getProfessional() != null && booking.getProfessional().getId().equals(userId));
-        if (!isParticipant) {
-            throw new UnauthorizedActionException("You do not have access to this quotation");
-        }
+    private boolean isParticipant(Long userId, Booking booking) {
+        return booking.getCustomer().getId().equals(userId) || isAssignedProfessional(userId, booking);
+    }
+
+    /*
+     * Non-participants get the same "not found" their request would get if the booking or
+     * quotation did not exist, using the message of the lookup that endpoint performs first, so
+     * sequential ids cannot be used to discover which bookings exist.
+     */
+    private ResourceNotFoundException bookingNotFound(Long bookingId) {
+        return new ResourceNotFoundException("Booking not found: " + bookingId);
     }
 
     private Booking findBooking(Long bookingId) {
         return bookingRepository.findById(bookingId)
-                .orElseThrow(() -> new ResourceNotFoundException("Booking not found: " + bookingId));
+                .orElseThrow(() -> bookingNotFound(bookingId));
     }
 
     private Quotation findQuotationByBooking(Long bookingId) {

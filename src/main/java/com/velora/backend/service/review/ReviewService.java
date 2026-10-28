@@ -12,7 +12,6 @@ import com.velora.backend.entity.user.User;
 import com.velora.backend.exception.DuplicateResourceException;
 import com.velora.backend.exception.InvalidStateTransitionException;
 import com.velora.backend.exception.ResourceNotFoundException;
-import com.velora.backend.exception.UnauthorizedActionException;
 import com.velora.backend.mapper.review.ReviewMapper;
 import com.velora.backend.repository.booking.BookingRepository;
 import com.velora.backend.repository.professional.ProfessionalProfileRepository;
@@ -65,7 +64,8 @@ public class ReviewService {
                 .orElseThrow(() -> new ResourceNotFoundException("Booking not found: " + bookingId));
 
         if (!booking.getCustomer().getId().equals(customerId)) {
-            throw new UnauthorizedActionException("Only the customer on this booking can leave a review");
+            // Same error as a missing booking, so sequential ids cannot be used to discover bookings.
+            throw new ResourceNotFoundException("Booking not found: " + bookingId);
         }
         if (booking.getStatus() != BookingStatus.COMPLETED) {
             throw new InvalidStateTransitionException("Can only review a completed booking");

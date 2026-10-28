@@ -12,7 +12,6 @@ import com.velora.backend.entity.user.User;
 import com.velora.backend.exception.DuplicateResourceException;
 import com.velora.backend.exception.InvalidStateTransitionException;
 import com.velora.backend.exception.ResourceNotFoundException;
-import com.velora.backend.exception.UnauthorizedActionException;
 import com.velora.backend.mapper.review.ReviewMapper;
 import com.velora.backend.repository.booking.BookingRepository;
 import com.velora.backend.repository.professional.ProfessionalProfileRepository;
@@ -89,7 +88,8 @@ class ReviewServiceTest {
         CreateReviewRequest request = new CreateReviewRequest(5, "Great work");
 
         assertThatThrownBy(() -> reviewService.createReview(999L, 31L, request))
-                .isInstanceOf(UnauthorizedActionException.class);
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessage("Booking not found: 31");
     }
 
     @Test

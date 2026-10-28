@@ -12,7 +12,7 @@ import com.velora.backend.entity.user.Role;
 import com.velora.backend.entity.portfolio.ServiceGroup;
 import com.velora.backend.entity.user.User;
 import com.velora.backend.exception.InvalidStateTransitionException;
-import com.velora.backend.exception.UnauthorizedActionException;
+import com.velora.backend.exception.ResourceNotFoundException;
 import com.velora.backend.mapper.booking.BookingMapper;
 import com.velora.backend.mapper.portfolio.PortfolioItemMapper;
 import com.velora.backend.mapper.professional.ProfessionalMapper;
@@ -40,6 +40,8 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -89,7 +91,68 @@ class BookingServiceTest {
         when(bookingRepository.findById(5L)).thenReturn(Optional.of(booking));
 
         assertThatThrownBy(() -> bookingService.cancel(999L, 5L))
-                .isInstanceOf(UnauthorizedActionException.class);
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessage("Booking not found: 5");
+        verify(bookingRepository, never()).save(any());
+    }
+
+    private Booking bookingOf5() {
+        Booking booking = Booking.builder()
+                .id(5L).customer(customer).professional(professional).requestType(RequestType.FULL_HOME_PROJECT)
+                .status(BookingStatus.PENDING).scheduledAt(Instant.now()).build();
+        when(bookingRepository.findById(5L)).thenReturn(Optional.of(booking));
+        return booking;
+    }
+
+    @Test
+    void getByIdHidesBookingFromNonParticipantWithTheSameErrorAsAMissingBooking() {
+        bookingOf5();
+        when(bookingRepository.findById(77L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> bookingService.getById(999L, Role.CUSTOMER, 5L))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessage("Booking not found: 5");
+        assertThatThrownBy(() -> bookingService.getById(999L, Role.CUSTOMER, 77L))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessage("Booking not found: 77");
+    }
+
+    @Test
+    void getByIdStillReturnsTheBookingToItsCustomerProfessionalAndAdmin() {
+        bookingOf5();
+
+        assertThat(bookingService.getById(1L, Role.CUSTOMER, 5L).id()).isEqualTo(5L);
+        assertThat(bookingService.getById(2L, Role.PROFESSIONAL, 5L).id()).isEqualTo(5L);
+        assertThat(bookingService.getById(999L, Role.ADMIN, 5L).id()).isEqualTo(5L);
+    }
+
+    @Test
+    void getTimelineHidesBookingFromNonParticipant() {
+        bookingOf5();
+
+        assertThatThrownBy(() -> bookingService.getTimeline(999L, Role.CUSTOMER, 5L))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessage("Booking not found: 5");
+    }
+
+    @Test
+    void updateStatusHidesBookingFromAProfessionalWhoIsNotAssigned() {
+        bookingOf5();
+
+        assertThatThrownBy(() -> bookingService.updateStatus(999L, 5L, BookingStatus.CONFIRMED))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessage("Booking not found: 5");
+        verify(bookingRepository, never()).save(any());
+    }
+
+    @Test
+    void addInspirationImageHidesBookingFromNonOwner() {
+        bookingOf5();
+
+        assertThatThrownBy(() -> bookingService.addInspirationImage(999L, 5L, "https://img.test/a.jpg"))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessage("Booking not found: 5");
+        verify(inspirationImageRepository, never()).save(any());
     }
 
     @Test

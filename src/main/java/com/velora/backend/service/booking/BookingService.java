@@ -14,7 +14,6 @@ import com.velora.backend.entity.portfolio.ServiceGroup;
 import com.velora.backend.entity.user.User;
 import com.velora.backend.exception.InvalidStateTransitionException;
 import com.velora.backend.exception.ResourceNotFoundException;
-import com.velora.backend.exception.UnauthorizedActionException;
 import com.velora.backend.mapper.booking.BookingMapper;
 import com.velora.backend.repository.booking.BookingInspirationImageRepository;
 import com.velora.backend.repository.booking.BookingRepository;
@@ -113,7 +112,7 @@ public class BookingService {
         Booking booking = findBooking(bookingId);
 
         if (!booking.getCustomer().getId().equals(customerId)) {
-            throw new UnauthorizedActionException("Only the customer who made this booking can add images to it");
+            throw bookingNotFound(bookingId);
         }
         if (!EDITABLE_STATUSES.contains(booking.getStatus())) {
             throw new InvalidStateTransitionException(
@@ -193,7 +192,7 @@ public class BookingService {
         Booking booking = findBooking(bookingId);
 
         if (!booking.getCustomer().getId().equals(customerId)) {
-            throw new UnauthorizedActionException("Only the customer who made this booking can cancel it");
+            throw bookingNotFound(bookingId);
         }
 
         if (!CANCELLABLE_STATUSES.contains(booking.getStatus())) {
@@ -213,7 +212,7 @@ public class BookingService {
         Booking booking = findBooking(bookingId);
 
         if (booking.getProfessional() == null || !booking.getProfessional().getId().equals(professionalId)) {
-            throw new UnauthorizedActionException("Only the assigned professional can update this booking's status");
+            throw bookingNotFound(bookingId);
         }
 
         validateTransition(booking.getStatus(), newStatus);
@@ -245,8 +244,16 @@ public class BookingService {
         boolean isParticipant = booking.getCustomer().getId().equals(userId)
                 || (booking.getProfessional() != null && booking.getProfessional().getId().equals(userId));
         if (!isParticipant) {
-            throw new UnauthorizedActionException("You do not have access to this booking");
+            throw bookingNotFound(booking.getId());
         }
+    }
+
+    /**
+     * Also what a non-participant gets: a booking you have no part in is reported as missing, with
+     * the same message, so sequential ids cannot be used to discover which bookings exist.
+     */
+    private ResourceNotFoundException bookingNotFound(Long bookingId) {
+        return new ResourceNotFoundException("Booking not found: " + bookingId);
     }
 
     private BookingTimelineEventResponse toTimelineResponse(BookingTimelineEvent event) {
@@ -262,6 +269,6 @@ public class BookingService {
 
     private Booking findBooking(Long bookingId) {
         return bookingRepository.findById(bookingId)
-                .orElseThrow(() -> new ResourceNotFoundException("Booking not found: " + bookingId));
+                .orElseThrow(() -> bookingNotFound(bookingId));
     }
 }

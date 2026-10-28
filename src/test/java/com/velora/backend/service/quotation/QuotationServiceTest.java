@@ -11,7 +11,6 @@ import com.velora.backend.entity.user.Role;
 import com.velora.backend.entity.user.User;
 import com.velora.backend.exception.InvalidStateTransitionException;
 import com.velora.backend.exception.ResourceNotFoundException;
-import com.velora.backend.exception.UnauthorizedActionException;
 import com.velora.backend.mapper.quotation.QuotationMapper;
 import com.velora.backend.repository.booking.BookingRepository;
 import com.velora.backend.service.booking.BookingEventRecorder;
@@ -73,7 +72,8 @@ class QuotationServiceTest {
         SaveQuotationRequest request = new SaveQuotationRequest(null, List.of());
 
         assertThatThrownBy(() -> quotationService.saveDraft(999L, 10L, request))
-                .isInstanceOf(UnauthorizedActionException.class);
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessage("Booking not found: 10");
     }
 
     @Test
@@ -158,7 +158,41 @@ class QuotationServiceTest {
         when(quotationRepository.findByBookingId(10L)).thenReturn(Optional.of(sent));
 
         assertThatThrownBy(() -> quotationService.accept(999L, 10L))
-                .isInstanceOf(UnauthorizedActionException.class);
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessage("No quotation found for booking: 10");
+    }
+
+    @Test
+    void rejectHidesQuotationFromNonOwnerCustomer() {
+        Quotation sent = Quotation.builder()
+                .id(58L).booking(booking).status(QuotationStatus.SENT).totalAmount(BigDecimal.ZERO).build();
+        when(quotationRepository.findByBookingId(10L)).thenReturn(Optional.of(sent));
+
+        assertThatThrownBy(() -> quotationService.reject(999L, 10L))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessage("No quotation found for booking: 10");
+    }
+
+    @Test
+    void sendHidesQuotationFromUnassignedProfessional() {
+        Quotation draft = Quotation.builder()
+                .id(59L).booking(booking).status(QuotationStatus.DRAFT).totalAmount(BigDecimal.ZERO).build();
+        when(quotationRepository.findByBookingId(10L)).thenReturn(Optional.of(draft));
+
+        assertThatThrownBy(() -> quotationService.send(999L, 10L))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessage("No quotation found for booking: 10");
+    }
+
+    @Test
+    void getHidesQuotationFromNonParticipant() {
+        Quotation sent = Quotation.builder()
+                .id(63L).booking(booking).status(QuotationStatus.SENT).totalAmount(BigDecimal.ZERO).build();
+        when(quotationRepository.findByBookingId(10L)).thenReturn(Optional.of(sent));
+
+        assertThatThrownBy(() -> quotationService.get(999L, 10L))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessage("No quotation found for booking: 10");
     }
 
     @Test
@@ -193,7 +227,8 @@ class QuotationServiceTest {
         SaveQuotationRequest request = new SaveQuotationRequest(null, List.of());
 
         assertThatThrownBy(() -> quotationService.saveDraft(2L, 20L, request))
-                .isInstanceOf(UnauthorizedActionException.class);
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessage("Booking not found: 20");
     }
 
     @Test
