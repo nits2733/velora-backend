@@ -77,12 +77,14 @@ class ProfessionalControllerWebTest {
         when(professionalService.search(any(), any(), any(), any(), any(), any(), any(Pageable.class)))
                 .thenReturn(new PageResponse<>(List.of(new ProfessionalSummaryResponse(
                         7L, "Asha Rao", "Modular Kitchen", "Pune", 10,
-                        AvailabilityStatus.AVAILABLE, new BigDecimal("4.50"), 12)), 0, 20, 1, 1, true));
+                        AvailabilityStatus.AVAILABLE, new BigDecimal("4.50"), 12, "https://img.test/asha.jpg")),
+                        0, 20, 1, 1, true));
 
         mockMvc.perform(get("/api/professionals").with(as(3L, Role.ADMIN)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].id").value(7))
-                .andExpect(jsonPath("$.content[0].fullName").value("Asha Rao"));
+                .andExpect(jsonPath("$.content[0].fullName").value("Asha Rao"))
+                .andExpect(jsonPath("$.content[0].avatarUrl").value("https://img.test/asha.jpg"));
     }
 
     @Test

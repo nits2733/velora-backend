@@ -18,6 +18,7 @@ public record ProfessionalSummaryResponse(
         Integer yearsExperience,
         AvailabilityStatus availabilityStatus,
         BigDecimal averageRating,
-        int ratingCount
+        int ratingCount,
+        String avatarUrl
 ) {
 }

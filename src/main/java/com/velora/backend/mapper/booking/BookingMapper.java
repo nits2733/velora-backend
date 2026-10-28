@@ -9,9 +9,12 @@ import com.velora.backend.dto.professional.ProfessionalSummaryResponse;
 import com.velora.backend.entity.booking.Booking;
 import com.velora.backend.entity.booking.BookingInspirationImage;
 import com.velora.backend.entity.professional.ProfessionalProfile;
+import com.velora.backend.entity.quotation.QuotationStatus;
 import com.velora.backend.entity.user.User;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
+
+import java.math.BigDecimal;
 
 @Component
 @RequiredArgsConstructor
@@ -20,7 +23,8 @@ public class BookingMapper {
     private final ProfessionalMapper professionalMapper;
     private final PortfolioItemMapper portfolioItemMapper;
 
-    public BookingResponse toResponse(Booking booking) {
+    public BookingResponse toResponse(Booking booking, QuotationStatus quotationStatus, BigDecimal quotationTotal,
+                                      boolean reviewed) {
         return new BookingResponse(
                 booking.getId(),
                 booking.getRequestType(),
@@ -39,7 +43,11 @@ public class BookingMapper {
                 booking.getStatus(),
                 booking.getNotes(),
                 booking.getInspirationImages().stream().map(BookingInspirationImage::getImageUrl).toList(),
-                booking.getCreatedAt()
+                booking.getCreatedAt(),
+                booking.getUpdatedAt(),
+                quotationStatus,
+                quotationTotal,
+                reviewed
         );
     }
 

@@ -2,11 +2,14 @@ package com.velora.backend.controller.booking;
 
 import com.velora.backend.dto.booking.AddInspirationImageRequest;
 import com.velora.backend.dto.booking.AssignProfessionalRequest;
+import com.velora.backend.dto.booking.BookingCountsResponse;
 import com.velora.backend.dto.booking.BookingRequest;
 import com.velora.backend.dto.booking.BookingResponse;
 import com.velora.backend.dto.booking.BookingStatusUpdateRequest;
 import com.velora.backend.dto.booking.BookingTimelineEventResponse;
 import com.velora.backend.dto.booking.ProfessionalMatchResponse;
+import com.velora.backend.entity.booking.BookingStatus;
+import com.velora.backend.entity.user.Role;
 import com.velora.backend.security.UserPrincipal;
 import com.velora.backend.service.booking.BookingService;
 import com.velora.backend.service.professional.ProfessionalMatchingService;
@@ -55,16 +58,32 @@ public class BookingController {
     }
 
     @GetMapping
-    @Operation(summary = "List bookings for the current user (customer sees own, professional sees assigned)")
+    @Operation(summary = "List bookings for the current user (customer sees own newest first, professional sees "
+            + "assigned by scheduled date). Optional repeatable status filter; actionNeeded=true (customers only) "
+            + "keeps active bookings whose quotation is waiting for an answer")
     public ResponseEntity<PageResponse<BookingResponse>> getBookings(
             @AuthenticationPrincipal UserPrincipal principal,
+            @RequestParam(required = false) List<BookingStatus> status,
+            @RequestParam(defaultValue = "false") boolean actionNeeded,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
 
         int safeSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
-            Pageable pageable = PageRequest.of(Math.max(page, 0), safeSize, Sort.by(Sort.Direction.DESC, "scheduledAt"));
+        // id breaks ties so paging never repeats or skips rows that share a timestamp.
+        Sort sort = principal.getRole() == Role.PROFESSIONAL
+                ? Sort.by(Sort.Direction.DESC, "scheduledAt")
+                : Sort.by(Sort.Direction.DESC, "createdAt").and(Sort.by(Sort.Direction.DESC, "id"));
+        Pageable pageable = PageRequest.of(Math.max(page, 0), safeSize, sort);
 
-        return ResponseEntity.ok(bookingService.getBookingsForUser(principal.getId(), principal.getRole(), pageable));
+        return ResponseEntity.ok(bookingService.getBookingsForUser(
+                principal.getId(), principal.getRole(), status, actionNeeded, pageable));
+    }
+
+    @GetMapping("/counts")
+    @Operation(summary = "Per-status booking totals for the current user, plus how many quotations await "
+            + "the customer's answer")
+    public ResponseEntity<BookingCountsResponse> counts(@AuthenticationPrincipal UserPrincipal principal) {
+        return ResponseEntity.ok(bookingService.getCounts(principal.getId(), principal.getRole()));
     }
 
     @GetMapping("/awaiting-assignment")

@@ -23,7 +23,8 @@ public class ProfessionalMapper {
                 profile.getYearsExperience(),
                 profile.getAvailabilityStatus(),
                 profile.getAverageRating(),
-                profile.getRatingCount()
+                profile.getRatingCount(),
+                profile.getUser().getAvatarUrl()
         );
     }
 

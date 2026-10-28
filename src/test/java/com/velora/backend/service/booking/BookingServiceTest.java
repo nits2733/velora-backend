@@ -1,5 +1,6 @@
 package com.velora.backend.service.booking;
 
+import com.velora.backend.dto.booking.BookingCountsResponse;
 import com.velora.backend.dto.booking.BookingRequest;
 import com.velora.backend.dto.booking.BookingResponse;
 import com.velora.backend.entity.professional.AvailabilityStatus;
@@ -7,6 +8,8 @@ import com.velora.backend.entity.booking.Booking;
 import com.velora.backend.entity.booking.BookingStatus;
 import com.velora.backend.entity.portfolio.Category;
 import com.velora.backend.entity.professional.ProfessionalProfile;
+import com.velora.backend.entity.quotation.Quotation;
+import com.velora.backend.entity.quotation.QuotationStatus;
 import com.velora.backend.entity.booking.RequestType;
 import com.velora.backend.entity.user.Role;
 import com.velora.backend.entity.portfolio.ServiceGroup;
@@ -20,6 +23,8 @@ import com.velora.backend.repository.booking.BookingInspirationImageRepository;
 import com.velora.backend.repository.booking.BookingRepository;
 import com.velora.backend.repository.booking.BookingTimelineEventRepository;
 import com.velora.backend.repository.portfolio.CategoryRepository;
+import com.velora.backend.repository.quotation.QuotationRepository;
+import com.velora.backend.repository.review.ReviewRepository;
 import com.velora.backend.repository.user.UserRepository;
 import com.velora.backend.util.PageResponse;
 import org.junit.jupiter.api.BeforeEach;
@@ -32,14 +37,17 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -59,6 +67,10 @@ class BookingServiceTest {
     private BookingTimelineEventRepository timelineEventRepository;
     @Mock
     private BookingEventRecorder eventRecorder;
+    @Mock
+    private QuotationRepository quotationRepository;
+    @Mock
+    private ReviewRepository reviewRepository;
 
     private final BookingMapper bookingMapper = new BookingMapper(new ProfessionalMapper(), new PortfolioItemMapper());
 
@@ -70,7 +82,8 @@ class BookingServiceTest {
     @BeforeEach
     void setUp() {
         bookingService = new BookingService(bookingRepository, userRepository,
-                categoryRepository, inspirationImageRepository, timelineEventRepository, bookingMapper, eventRecorder);
+                categoryRepository, inspirationImageRepository, timelineEventRepository, bookingMapper, eventRecorder,
+                quotationRepository, reviewRepository);
 
         customer = User.builder().id(1L).email("customer@velora.test").fullName("Cust").role(Role.CUSTOMER).build();
         professional = User.builder().id(2L).email("professional@velora.test").fullName("Pro").role(Role.PROFESSIONAL).build();
@@ -153,6 +166,187 @@ class BookingServiceTest {
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessage("Booking not found: 5");
         verify(inspirationImageRepository, never()).save(any());
+    }
+
+    private Quotation quotationOn(Booking booking, QuotationStatus status, String total) {
+        Quotation quotation = Quotation.builder()
+                .id(90L).booking(booking).status(status).totalAmount(new BigDecimal(total)).build();
+        when(quotationRepository.findByBookingIdIn(List.of(booking.getId()))).thenReturn(List.of(quotation));
+        return quotation;
+    }
+
+    @Test
+    void aSentQuotationShowsItsStatusAndTotalOnTheBooking() {
+        Booking booking = bookingOf5();
+        quotationOn(booking, QuotationStatus.SENT, "85000.00");
+
+        BookingResponse response = bookingService.getById(1L, Role.CUSTOMER, 5L);
+
+        assertThat(response.quotationStatus()).isEqualTo(QuotationStatus.SENT);
+        assertThat(response.quotationTotal()).isEqualByComparingTo("85000");
+    }
+
+    @Test
+    void aDraftQuotationIsHiddenFromTheCustomerButNotTheProfessional() {
+        Booking booking = bookingOf5();
+        quotationOn(booking, QuotationStatus.DRAFT, "1000");
+
+        BookingResponse seenByCustomer = bookingService.getById(1L, Role.CUSTOMER, 5L);
+        assertThat(seenByCustomer.quotationStatus()).isNull();
+        assertThat(seenByCustomer.quotationTotal()).isNull();
+
+        BookingResponse seenByProfessional = bookingService.getById(2L, Role.PROFESSIONAL, 5L);
+        assertThat(seenByProfessional.quotationStatus()).isEqualTo(QuotationStatus.DRAFT);
+    }
+
+    @Test
+    void theBookingReportsWhetherItHasBeenReviewed() {
+        bookingOf5();
+        when(reviewRepository.findReviewedBookingIds(List.of(5L))).thenReturn(List.of(5L));
+
+        assertThat(bookingService.getById(1L, Role.CUSTOMER, 5L).reviewed()).isTrue();
+    }
+
+    @Test
+    void aBookingWithNoQuotationOrReviewHasNeither() {
+        bookingOf5();
+
+        BookingResponse response = bookingService.getById(1L, Role.CUSTOMER, 5L);
+
+        assertThat(response.quotationStatus()).isNull();
+        assertThat(response.reviewed()).isFalse();
+    }
+
+    @Test
+    void aPageOfBookingsLoadsQuotationsAndReviewsInOneQueryEach() {
+        Booking a = Booking.builder().id(5L).customer(customer).requestType(RequestType.FULL_HOME_PROJECT)
+                .status(BookingStatus.PENDING_ASSIGNMENT).scheduledAt(Instant.now()).build();
+        Booking b = Booking.builder().id(6L).customer(customer).requestType(RequestType.FULL_HOME_PROJECT)
+                .status(BookingStatus.PENDING_ASSIGNMENT).scheduledAt(Instant.now()).build();
+        Pageable pageable = PageRequest.of(0, 20);
+        when(bookingRepository.findByCustomerId(1L, pageable)).thenReturn(new PageImpl<>(List.of(a, b), pageable, 2));
+
+        bookingService.getBookingsForUser(1L, Role.CUSTOMER, null, false, pageable);
+
+        verify(quotationRepository).findByBookingIdIn(List.of(5L, 6L));
+        verify(reviewRepository).findReviewedBookingIds(List.of(5L, 6L));
+        verify(quotationRepository, never()).findByBookingId(any());
+    }
+
+    @Test
+    void listWithoutAFilterReturnsEveryStatus() {
+        Pageable pageable = PageRequest.of(0, 20);
+        when(bookingRepository.findByCustomerId(1L, pageable)).thenReturn(new PageImpl<>(List.of()));
+
+        bookingService.getBookingsForUser(1L, Role.CUSTOMER, List.of(), false, pageable);
+
+        verify(bookingRepository).findByCustomerId(1L, pageable);
+        verify(bookingRepository, never()).findByCustomerIdAndStatusIn(any(), any(), any());
+    }
+
+    @Test
+    void listFiltersCustomerBookingsByStatus() {
+        Pageable pageable = PageRequest.of(0, 20);
+        List<BookingStatus> statuses = List.of(BookingStatus.PENDING, BookingStatus.CONFIRMED);
+        when(bookingRepository.findByCustomerIdAndStatusIn(1L, statuses, pageable)).thenReturn(new PageImpl<>(List.of()));
+
+        bookingService.getBookingsForUser(1L, Role.CUSTOMER, statuses, false, pageable);
+
+        verify(bookingRepository).findByCustomerIdAndStatusIn(1L, statuses, pageable);
+    }
+
+    @Test
+    void listFiltersProfessionalBookingsByStatus() {
+        Pageable pageable = PageRequest.of(0, 20);
+        List<BookingStatus> statuses = List.of(BookingStatus.CONFIRMED);
+        when(bookingRepository.findByProfessionalIdAndStatusIn(2L, statuses, pageable)).thenReturn(new PageImpl<>(List.of()));
+
+        bookingService.getBookingsForUser(2L, Role.PROFESSIONAL, statuses, false, pageable);
+
+        verify(bookingRepository).findByProfessionalIdAndStatusIn(2L, statuses, pageable);
+    }
+
+    @Test
+    void actionNeededCoversEveryActiveStatusWhenNoStatusIsGiven() {
+        Pageable pageable = PageRequest.of(0, 20);
+        Set<BookingStatus> active = Set.of(BookingStatus.PENDING_ASSIGNMENT, BookingStatus.PENDING, BookingStatus.CONFIRMED);
+        when(bookingRepository.findAwaitingQuotationResponse(1L, active, QuotationStatus.SENT, pageable))
+                .thenReturn(new PageImpl<>(List.of()));
+
+        bookingService.getBookingsForUser(1L, Role.CUSTOMER, null, true, pageable);
+
+        verify(bookingRepository).findAwaitingQuotationResponse(1L, active, QuotationStatus.SENT, pageable);
+    }
+
+    @Test
+    void actionNeededIsNarrowedByTheStatusFilterAndNeverIncludesFinishedBookings() {
+        Pageable pageable = PageRequest.of(0, 20);
+        when(bookingRepository.findAwaitingQuotationResponse(1L, Set.of(BookingStatus.PENDING), QuotationStatus.SENT, pageable))
+                .thenReturn(new PageImpl<>(List.of()));
+
+        bookingService.getBookingsForUser(1L, Role.CUSTOMER,
+                List.of(BookingStatus.COMPLETED, BookingStatus.PENDING), true, pageable);
+
+        verify(bookingRepository).findAwaitingQuotationResponse(1L, Set.of(BookingStatus.PENDING), QuotationStatus.SENT, pageable);
+    }
+
+    @Test
+    void actionNeededWithOnlyFinishedStatusesIsEmptyWithoutQueryingTheDatabase() {
+        Pageable pageable = PageRequest.of(0, 20);
+
+        PageResponse<BookingResponse> result = bookingService.getBookingsForUser(1L, Role.CUSTOMER,
+                List.of(BookingStatus.COMPLETED, BookingStatus.CANCELLED), true, pageable);
+
+        assertThat(result.content()).isEmpty();
+        verify(bookingRepository, never()).findAwaitingQuotationResponse(any(), any(), any(), any());
+    }
+
+    @Test
+    void actionNeededIsNotAvailableToProfessionals() {
+        assertThatThrownBy(() -> bookingService.getBookingsForUser(2L, Role.PROFESSIONAL, null, true, PageRequest.of(0, 20)))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    private static BookingRepository.StatusCount row(BookingStatus status, long total) {
+        return new BookingRepository.StatusCount() {
+            @Override
+            public BookingStatus getStatus() {
+                return status;
+            }
+
+            @Override
+            public long getTotal() {
+                return total;
+            }
+        };
+    }
+
+    @Test
+    void countsAlwaysIncludeEveryStatusWithZeros() {
+        when(bookingRepository.countByCustomerGroupedByStatus(1L))
+                .thenReturn(List.of(row(BookingStatus.PENDING, 2), row(BookingStatus.COMPLETED, 3)));
+        when(quotationRepository.countForCustomer(eq(1L), eq(QuotationStatus.SENT), any())).thenReturn(1L);
+
+        BookingCountsResponse counts = bookingService.getCounts(1L, Role.CUSTOMER);
+
+        assertThat(counts.byStatus()).containsOnlyKeys(BookingStatus.values());
+        assertThat(counts.byStatus()).containsEntry(BookingStatus.PENDING, 2L)
+                .containsEntry(BookingStatus.COMPLETED, 3L)
+                .containsEntry(BookingStatus.CANCELLED, 0L)
+                .containsEntry(BookingStatus.PENDING_ASSIGNMENT, 0L);
+        assertThat(counts.awaitingQuotationResponse()).isEqualTo(1L);
+    }
+
+    @Test
+    void professionalCountsUseTheirAssignedBookingsAndHaveNoQuotationsAwaiting() {
+        when(bookingRepository.countByProfessionalGroupedByStatus(2L)).thenReturn(List.of(row(BookingStatus.CONFIRMED, 4)));
+
+        BookingCountsResponse counts = bookingService.getCounts(2L, Role.PROFESSIONAL);
+
+        assertThat(counts.byStatus()).containsEntry(BookingStatus.CONFIRMED, 4L);
+        assertThat(counts.awaitingQuotationResponse()).isZero();
+        verify(bookingRepository, never()).countByCustomerGroupedByStatus(any());
+        verify(quotationRepository, never()).countForCustomer(any(), any(), any());
     }
 
     @Test

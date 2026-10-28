@@ -52,11 +52,30 @@ public class BookingEventRecorder {
     public void recordStatusChanged(Booking booking, BookingStatus from, BookingStatus to) {
         TimelineEventType eventType = to == BookingStatus.COMPLETED ? TimelineEventType.COMPLETED
                 : TimelineEventType.STATUS_CHANGED;
-        record(booking, eventType, from, to, "Status changed to " + to);
+        record(booking, eventType, from, to, timelineNote(to));
         notificationService.create(booking.getCustomer(), NotificationType.BOOKING_STATUS_CHANGED,
                 "Booking update",
-                "Your booking is now " + to + ".",
+                notificationBody(to),
                 booking.getId());
+    }
+
+    /** Plain-language text for the audit trail; clients should still key their own copy on {@code toStatus}. */
+    private static String timelineNote(BookingStatus to) {
+        return switch (to) {
+            case CONFIRMED -> "Professional confirmed";
+            case COMPLETED -> "Work completed";
+            case CANCELLED -> "Booking cancelled";
+            default -> "Booking updated";
+        };
+    }
+
+    private static String notificationBody(BookingStatus to) {
+        return switch (to) {
+            case CONFIRMED -> "Your professional has confirmed your booking.";
+            case COMPLETED -> "Your booking has been marked as completed.";
+            case CANCELLED -> "Your booking has been cancelled.";
+            default -> "There is an update on your booking.";
+        };
     }
 
     @Transactional
