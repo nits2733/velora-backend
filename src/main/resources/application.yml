@@ -106,3 +106,25 @@ logging:
   level:
     root: INFO
     com.velora.backend: INFO
+
+vision:
+  daily-limit: ${VISION_DAILY_LIMIT:5}
+  style-prefix: ${VISION_STYLE_PREFIX:interior design photo, same room layout, }
+  image-strength: ${VISION_IMAGE_STRENGTH:0.35}
+  stale-after: ${VISION_STALE_AFTER:20m}
+  api-url: ${VISION_API_URL:https://api.stability.ai/v2beta/stable-image/generate}
+  engine: ${VISION_ENGINE:sd3}
+  api-key: ${STABILITY_API_KEY:}
+  timeout: ${VISION_TIMEOUT:60s}
+  negative-prompt-enabled: ${VISION_NEGATIVE_PROMPT_ENABLED:true}
+  duplicate-window: ${VISION_DUPLICATE_WINDOW:60s}
+  min-short-side: ${VISION_MIN_SHORT_SIDE:512}
+  target-pixels: ${VISION_TARGET_PIXELS:1000000}
+  max-input-pixels: ${VISION_MAX_INPUT_PIXELS:40000000}
+  preprocess-concurrency: ${VISION_PREPROCESS_CONCURRENCY:2}
+  preprocess-wait: ${VISION_PREPROCESS_WAIT:5s}
+  jpeg-quality: ${VISION_JPEG_QUALITY:0.92}
+  # UNCALIBRATED strengths: hypotheses pending real-image evaluation
+  strength-preserve-original: ${VISION_STRENGTH_PRESERVE_ORIGINAL:0.30}
+  strength-balanced: ${VISION_STRENGTH_BALANCED:0.50}
+  strength-creative: ${VISION_STRENGTH_CREATIVE:0.70}

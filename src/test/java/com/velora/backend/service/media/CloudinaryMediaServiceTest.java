@@ -123,4 +123,63 @@ class CloudinaryMediaServiceTest {
                 .isInstanceOf(MediaUploadException.class)
                 .hasMessageContaining("Failed to upload media to cloud storage");
     }
+
+    // ---------- public validate() ----------
+
+    @Test
+    void validateRejectsEmptyFile() {
+        MockMultipartFile emptyFile = new MockMultipartFile("file", "empty.jpg", "image/jpeg", new byte[0]);
+
+        assertThatThrownBy(() -> mediaService.validate(emptyFile))
+                .isInstanceOf(MediaUploadException.class)
+                .hasMessageContaining("Please select a valid non-empty file");
+    }
+
+    @Test
+    void validateRejectsDisallowedContentType() {
+        MockMultipartFile pdf = new MockMultipartFile("file", "document.pdf", "application/pdf", "%PDF-1.4".getBytes());
+
+        assertThatThrownBy(() -> mediaService.validate(pdf))
+                .isInstanceOf(MediaUploadException.class)
+                .hasMessageContaining("Invalid file type 'application/pdf'");
+    }
+
+    @Test
+    void validateRejectsOversizedFile() {
+        MockMultipartFile large = new MockMultipartFile("file", "giant.png", "image/png", new byte[11 * 1024 * 1024]);
+
+        assertThatThrownBy(() -> mediaService.validate(large))
+                .isInstanceOf(MediaUploadException.class)
+                .hasMessageContaining("exceeds maximum permitted limit of 10MB");
+    }
+
+    @Test
+    void validateAcceptsValidFileWithoutTouchingCloudinary() {
+        MockMultipartFile ok = new MockMultipartFile("file", "room.jpg", "image/jpeg", "bytes".getBytes());
+
+        org.assertj.core.api.Assertions.assertThatCode(() -> mediaService.validate(ok)).doesNotThrowAnyException();
+
+        org.mockito.Mockito.verifyNoInteractions(cloudinary, uploader);
+    }
+
+    @Test
+    void uploadImageStillValidatesFirst() {
+        MockMultipartFile pdf = new MockMultipartFile("file", "document.pdf", "application/pdf", "%PDF".getBytes());
+
+        assertThatThrownBy(() -> mediaService.uploadImage(pdf, "x")).isInstanceOf(MediaUploadException.class);
+
+        org.mockito.Mockito.verifyNoInteractions(cloudinary);
+    }
+
+    @Test
+    void uploadImageBytesRejectsNullBytes() {
+        assertThatThrownBy(() -> mediaService.uploadImageBytes(null, "image/jpeg", "vision/input"))
+                .isInstanceOf(MediaUploadException.class);
+    }
+
+    @Test
+    void uploadImageBytesRejectsEmptyBytes() {
+        assertThatThrownBy(() -> mediaService.uploadImageBytes(new byte[0], "image/jpeg", "vision/input"))
+                .isInstanceOf(MediaUploadException.class);
+    }
 }

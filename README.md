@@ -105,6 +105,8 @@ At minimum set:
 > 2. Navigate to **Settings → SMTP & API → SMTP tab → Generate SMTP Key**.
 > 3. Set `BREVO_EMAIL` to your login email and `BREVO_SMTP_KEY` to the generated key (NOT your account password).
 > 4. For production, verify your sending domain in the Brevo dashboard to avoid spam filters.
+>
+> 🧪 **Local development without email**: under the `local` Spring profile (`-Dspring-boot.run.profiles=local`) `LoggingEmailService` replaces Brevo and prints each OTP to the application log (look for `[LOCAL PROFILE - NO EMAIL SENT]`). It must never be used in a deployed environment; deployments run the default profile and use Brevo.
 > 5. HTTPS is mandatory in production to protect credentials and OTP transmission.
 
 > ⚠️ The app **fails fast at startup** if `JWT_SECRET` is missing or too short — this
@@ -222,7 +224,7 @@ Project execution/scheduling, milestones, payments (Razorpay), notifications
 a file), Google Maps, refresh tokens, OTP, password reset, and a real
 professional-availability calendar (today it's a simple self-toggled flag). Customer
 browsing/searching/selecting a professional is intentionally **not** a feature — see
-[Design Notes](#-design-notes--extensibility).
+[Design Notes](#-design-notes--extensibility). Vision Studio has no payments or credits.
 </details>
 
 ## 🏗️ Architecture
@@ -361,12 +363,37 @@ candidates while assigning a booking.
 | POST | `/bookings/{bookingId}/review` | CUSTOMER (owner) | Leave a 1–5 rating + comment (only once, only after COMPLETED) |
 </details>
 
+<details>
+<summary><b>🪄 Vision Studio (CUSTOMER)</b></summary>
+
+| Method | Path | Role | Description |
+|---|---|---|---|
+| POST | `/api/vision/transform` | CUSTOMER | Multipart `image` plus either structured preferences (`roomType`, `style`, `preservation` required; optional `colorPalette`, `customColorDescription`, `budgetTier`, repeatable `features`, `additionalInstructions`) or the legacy `stylePrompt` (max 300). Full contract: [docs/vision-api-contract.md](docs/vision-api-contract.md). Returns **202** `{id, status: PROCESSING}`; an identical request (legacy or structured) within 60s returns the existing PROCESSING/COMPLETED job (poll for the result; FAILED jobs never block); 400 on validation; 429 after the rolling-24h limit (FAILED jobs do not count) or with 2 jobs already in flight; 503 (`VisionUnavailableException`) if the worker queue (5) is full or too many images are being preprocessed at once (retry later). Vision accepts only real JPEG/PNG bytes (WebP is 400 "Only JPEG and PNG photos are supported.") even though the generic media validation message still lists WebP for other endpoints |
+| GET | `/api/vision/transform/{id}` | CUSTOMER (owner) | Poll the job: `PROCESSING`, `COMPLETED` (with `resultImageUrl`) or `FAILED` (with a generic `error`). 404 for unknown or foreign ids |
+</details>
+
 ## ⚙️ Environment Variables
 
 See `.env.example` for the full list: `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`,
 `DB_POOL_SIZE`, `JWT_SECRET` (required, 32+ bytes), `JWT_EXPIRATION_MS` (access token,
 default 15m), `REFRESH_TOKEN_TTL` (default `30d`), `PASSWORD_RESET_TTL` (default `30m`),
 `CORS_ALLOWED_ORIGINS`, `PORT`.
+
+**Vision Studio:** `STABILITY_API_KEY` (blank = jobs fail safely, startup is unaffected),
+`VISION_API_URL`, `VISION_ENGINE`, `VISION_DAILY_LIMIT` (default 5), `VISION_IMAGE_STRENGTH`
+(0.35), `VISION_STALE_AFTER` (20m), `VISION_TIMEOUT` (60s), `VISION_STYLE_PREFIX`,
+`VISION_NEGATIVE_PROMPT_ENABLED` (true), `VISION_DUPLICATE_WINDOW` (60s), image preprocessing `VISION_MIN_SHORT_SIDE` (512), `VISION_TARGET_PIXELS` (1000000), `VISION_MAX_INPUT_PIXELS` (40000000), `VISION_JPEG_QUALITY` (0.92), `VISION_PREPROCESS_CONCURRENCY` (2), `VISION_PREPROCESS_WAIT` (5s), and the placeholder (uncalibrated)
+preservation strengths `VISION_STRENGTH_PRESERVE_ORIGINAL` (0.30), `VISION_STRENGTH_BALANCED` (0.50), `VISION_STRENGTH_CREATIVE` (0.70).
+
+> **Deployment note:** on the small (512 MB) instance a JVM setting such as `-XX:MaxRAMPercentage=70` is recommended (the Dockerfile and render.yaml are not changed).
+>
+> **Quality status:** uploads (jpeg/png) are normalised to a ~1MP metadata-free JPEG (real JPEG/PNG bytes only, whatever the declared type; WebP is rejected with 400; min shorter side 512px; EXIF, GPS and ICC dropped; CMYK unsupported; applies to legacy requests too; 503 if too many images are being preprocessed), the provider seed is deterministic per request (an identical request after the 60s window returns the same image), and prompt wording and strengths are UNCALIBRATED hypotheses pending real-image evaluation; no quality improvement is claimed.
+>
+> ⚠️ **Partly verified provider.** One real call confirmed the request shape is accepted; strength semantics and `negative_prompt` support are still unverified. `StabilityAiVisionProvider` was written without fully checking
+> Stability AI's current API; its request/response format must be verified against their docs
+> and one real call before shipping. Vision Studio has no payments or credits, only the daily limit.
+> ⚠️ **V22–V24 numbering is tentative.** The Neon database already has an unrelated applied V21 (`project execution tracking`) whose file is not in this repo,
+> so `V22__vision_jobs.sql`, `V23__vision_job_preferences.sql` and `V24__category_hierarchy.sql` skip past it. Locally, `SPRING_FLYWAY_IGNORE_MIGRATION_PATTERNS=*:missing` in `.env` tolerates the missing V21. Recover that file and renumber before deploying.
 
 > ⚠️ **Password reset delivery is not wired up.** `PasswordResetNotifier` currently has
 > one implementation, `LoggingPasswordResetNotifier`, which writes the reset token to the
@@ -392,7 +419,7 @@ migration, is a new `V{n}__description.sql` file.
 | V7 | `rename_designer_to_professional_and_add_request_types.sql` | Renames role `DESIGNER`→`PROFESSIONAL`, `designer_profiles`→`professional_profiles`, every `designer_id` column→`professional_id`; adds `bookings.request_type` and `categories.service_group`; seeds the six Individual Service trade categories |
 | V8 | `generalize_design_to_portfolio_item.sql` | Renames `designs`→`portfolio_items`, `bookings.design_id`→`portfolio_item_id`; splits `style_tag`/`price_estimate` into a new optional `interior_design_details` satellite table |
 
-| V21 | `category_hierarchy.sql` | Adds `categories.parent_id` (self-FK, two-level taxonomy); replaces `UNIQUE(name)` with `UNIQUE(parent_id, name)` plus a partial unique index on `name WHERE parent_id IS NULL`. Schema only: subcategory seed content is still pending the product doc |
+| V24 | `category_hierarchy.sql` | Adds `categories.parent_id` (self-FK, two-level taxonomy); replaces `UNIQUE(name)` with `UNIQUE(parent_id, name)` plus a partial unique index on `name WHERE parent_id IS NULL`. Schema only: subcategory seed content is still pending the product doc |
 
 ## 💡 Design Notes / Extensibility
 

@@ -84,6 +84,11 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.BAD_REQUEST, ex.getMessage(), req, null);
     }
 
+    @ExceptionHandler(VisionUnavailableException.class)
+    public ResponseEntity<ApiErrorResponse> handleVisionUnavailable(VisionUnavailableException ex, HttpServletRequest req) {
+        return build(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage(), req, null);
+    }
+
     @ExceptionHandler(IllegalStateException.class)
     public ResponseEntity<ApiErrorResponse> handleIllegalState(IllegalStateException ex, HttpServletRequest req) {
         return build(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage(), req, null);
@@ -162,6 +167,31 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MediaUploadException.class)
     public ResponseEntity<ApiErrorResponse> handleMediaUpload(MediaUploadException ex, HttpServletRequest req) {
         return build(HttpStatus.BAD_REQUEST, ex.getMessage(), req, null);
+    }
+
+    @ExceptionHandler(org.springframework.web.method.annotation.HandlerMethodValidationException.class)
+    public ResponseEntity<ApiErrorResponse> handleMethodValidation(
+            org.springframework.web.method.annotation.HandlerMethodValidationException ex, HttpServletRequest req) {
+        List<ApiErrorResponse.FieldViolation> violations = ex.getAllValidationResults().stream()
+                .flatMap(r -> r.getResolvableErrors().stream()
+                        .map(e -> new ApiErrorResponse.FieldViolation(
+                                r.getMethodParameter().getParameterName() != null
+                                        ? r.getMethodParameter().getParameterName() : "parameter",
+                                e.getDefaultMessage() != null ? e.getDefaultMessage() : "Invalid value")))
+                .toList();
+        return build(HttpStatus.BAD_REQUEST, "Validation failed", req, violations);
+    }
+
+    @ExceptionHandler(org.springframework.web.multipart.support.MissingServletRequestPartException.class)
+    public ResponseEntity<ApiErrorResponse> handleMissingPart(
+            org.springframework.web.multipart.support.MissingServletRequestPartException ex, HttpServletRequest req) {
+        return build(HttpStatus.BAD_REQUEST, "Required part '" + ex.getRequestPartName() + "' is missing", req, null);
+    }
+
+    @ExceptionHandler(org.springframework.web.bind.MissingServletRequestParameterException.class)
+    public ResponseEntity<ApiErrorResponse> handleMissingParam(
+            org.springframework.web.bind.MissingServletRequestParameterException ex, HttpServletRequest req) {
+        return build(HttpStatus.BAD_REQUEST, "Required parameter '" + ex.getParameterName() + "' is missing", req, null);
     }
 
     @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)

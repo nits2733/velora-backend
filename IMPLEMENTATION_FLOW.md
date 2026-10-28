@@ -204,7 +204,7 @@ src/main/resources/
     └── V8__generalize_design_to_portfolio_item.sql
            # designs→portfolio_items, bookings.design_id→portfolio_item_id;
            # splits style_tag/price_estimate into a new interior_design_details table
-    └── V21__category_hierarchy.sql
+    └── V24__category_hierarchy.sql
            # categories.parent_id self-FK (two levels), UNIQUE(parent_id, name) + partial
            # unique index on top-level names. Schema only; subcategory seed pending product doc
 ```
@@ -560,7 +560,7 @@ established (see below).
 - `Category.serviceGroup` (`@Enumerated(STRING)`, added in `V7`) tags every category as
   `HOME_PROJECT` or `INDIVIDUAL_SERVICE` — this is what `BookingService` checks a
   booking's chosen category against its `requestType`.
-- `Category.parent` / `Category.subcategories` (`V21`) — optional self-reference, max two
+- `Category.parent` / `Category.subcategories` (`V24`) — optional self-reference, max two
   levels, enforced in `CategoryService` (admin CRUD: `POST/PUT/DELETE /api/categories`).
   Subcategories store `serviceGroup` equal to the parent's. `GET /api/categories` returns
   top-level categories with nested `subcategories`, loaded via one `@EntityGraph` query
@@ -3348,3 +3348,56 @@ generalization phase (`V8`). As new features are added (a portfolio-item write p
 project execution, milestones, payments, etc.), extend this file section by section
 rather than starting a new one, so it stays the single source of truth for onboarding
 and self-review.*
+
+---
+
+## 28. Vision Studio (AI Room Transformation)
+
+Asynchronous job flow: `VisionController` (CUSTOMER only) -> `VisionService.submit` -> `VisionJobProcessor` (`@Async("visionExecutor")`) -> `VisionProvider`.
+
+1. `POST /api/vision/transform` (multipart `image`, `stylePrompt`). `VisionService.submit` is intentionally not `@Transactional`:
+   it counts the user's PROCESSING/COMPLETED jobs in the last 24h (>= `vision.daily-limit` -> `RateLimitExceededException`, 429),
+   calls `MediaUploadService.validate(image)` first (empty/declared type/size), reads the bytes and fingerprints them, then runs the duplicate lookup, the in-flight check and `ImagePreprocessor.preprocess` (400/503), and uploads the PREPROCESSED bytes via `uploadImageBytes(..., "vision/input")`,
+   then, under a striped per-user lock (single instance only), re-checks the daily limit and rejects with 429 if the user already has 2 PROCESSING jobs newer than `vision.stale-after` (20m),
+   saves a `PROCESSING` `VisionJob` (the repository save commits), and only then hands off to the processor.
+   If the bounded executor (queue 5) rejects (`TaskRejectedException`) the job is saved FAILED and `VisionUnavailableException` (503) is thrown.
+   Response: 202 `{id, status}`.
+2. `VisionJobProcessor.process` runs on the `visionExecutor` pool (core 2, max 4, queue 5, AbortPolicy). It calls
+   `StabilityAiVisionProvider`, uploads the result with `MediaUploadService.uploadImageBytes(..., "vision/result")`, and saves
+   COMPLETED with `resultImageUrl`; any exception saves FAILED with a constant safe message (the real cause is logged server-side only).
+3. `GET /api/vision/transform/{id}` -> `VisionService.get` uses `findByIdAndUserId`; unknown or foreign ids are 404, never 403.
+4. `VisionJobSweeper.failStaleJobs` (every 5 min) fails PROCESSING jobs older than `vision.stale-after` (default 20m). `VisionJob` has an `@Version`; the processor ignores jobs no longer PROCESSING and drops its write on an optimistic-lock loss, and the sweeper skips such jobs.
+
+
+**Structured preferences (customizable redesign).** The same endpoint also accepts flat structured fields
+(`roomType`, `style`, `colorPalette`, `customColorDescription`, `budgetTier`, repeatable `features`, `preservation`,
+`additionalInstructions`); the legacy `stylePrompt` path keeps its request/response shape (but also gets the duplicate guard and a stored fingerprint, and has control characters stripped). Contract: `docs/vision-api-contract.md`.
+`VisionController` builds a `VisionPreferences` record when any structured field is present and calls
+`VisionService.submit(userId, image, stylePrompt, preferences)`; the service validates cross-field rules
+(`IllegalArgumentException` -> 400), normalises the preferences, then:
+
+1. validates and sanitises inputs (raw length checked first, then control and format characters stripped, then blank-to-null), computes a SHA-256
+   request fingerprint (user, image hash, canonical preferences JSON or `legacy`, stylePrompt; legacy requests are fingerprinted too) and, before the
+   daily-limit check, the in-flight check and the Cloudinary upload, returns the existing PROCESSING/COMPLETED job of the last
+   `vision.duplicate-window` (60s) with the same fingerprint (no upload, save, processor call or quota use; FAILED jobs are not duplicates;
+   the 202 body carries no `resultImageUrl`, so clients must poll). Check order: validate(image), fingerprint, duplicate, daily limit, in-flight cap (2), preprocess, upload;
+   then inside the per-user lock: duplicate re-check, daily limit, in-flight cap, save.
+   The check is DB-backed with an in-memory per-user lock, which covers concurrent requests on one instance (a lost race can leave an orphaned
+   uploaded input); only multiple instances can still double-pass, and closing that needs a DB advisory lock, which the no-`@Query` rule does not allow.
+2. `VisionPromptBuilder` deterministically turns the preferences into a prompt (room+style, palette, budget, features in enum order,
+   preservation clause, photorealism clause, then a CUSTOM colour (never in the main palette sentence) under "Additional customer colour preference:" and last the sanitised customer text under "Additional customer preference:") plus a negative prompt that depends on `Preservation` (PRESERVE_ORIGINAL and BALANCED include layout/opening terms; CREATIVE omits them; all keep people, distortion, watermark and blur terms)
+   (toggle `vision.negative-prompt-enabled`). Each enum carries its own phrase.
+3. The job stores `preferences` (plain-TEXT JSON write-once snapshot, a deliberate exception to the no-JSON-blob guidance), `built_prompt`,
+   `image_strength` (`vision.strength-*` per `Preservation`; PLACEHOLDER values, not yet calibrated) and `request_fingerprint` (migration V23, tentative).
+   `VisionJobProcessor` uses `built_prompt` / `image_strength` / the negative prompt when present, else the legacy prefix + stylePrompt and `vision.image-strength`.
+**Privacy.** `preferences` and `built_prompt` keep the customer's free text indefinitely and the built prompt is sent to Stability AI; `VisionJobResponse` never exposes them. Strength properties are range-validated at startup (`@Validated`, 0.0..1.0, max 2 decimals) to fit `NUMERIC(3,2)`.
+The provider format is partly verified (one real call accepted the sd3 multipart request); strength semantics and `negative_prompt` support are unverified. Migrations `V22__vision_jobs.sql` and `V23__vision_job_preferences.sql` are tentative (renumber before deploy).
+
+
+**Phase 1 quality changes (UNCALIBRATED; no improvement is claimed).** Contract details: `docs/vision-api-contract.md`.
+- Submit order (both structured and legacy): text/preference validation -> `mediaUploadService.validate(image)` (empty/declared type/size) -> read bytes and fingerprint (ORIGINAL bytes; includes the sanitised prompt and a SHA-256 of the image) -> duplicate lookup -> daily-limit and in-flight pre-checks -> `ImagePreprocessor.preprocess` (IllegalArgumentException -> 400, `VisionUnavailableException` -> 503, both before any upload or save) -> `uploadImageBytes(preprocessedBytes, "image/jpeg", "vision/input")` -> lock, recheck, save -> `processor.process(jobId, processedBytes, "image/jpeg")`. The earlier numbered lists above describe the pre-Phase-1 order and the old `uploadImage(file)` call.
+- `ImagePreprocessor` decides the format by magic bytes (JPEG `FF D8 FF`, PNG signature), never by declared content type; real WebP or anything else is 400 "Only JPEG and PNG photos are supported." (no pass-through, so limits and metadata stripping cannot be bypassed). It reads dimensions from the header and rejects a shorter side below `vision.min-short-side` (512) or more than `vision.max-input-pixels` (40M), decodes with source subsampling (images above about 4 MP are decoded subsampled so the full raster is not held; images between 1 and 4 MP are fully decoded, about 35-40 MB peak per permit, which is why concurrency is capped), applies EXIF orientation via the built-in `ExifOrientation` reader, flattens alpha onto white, downscales to `vision.target-pixels` (~1MP, never upscales), and re-encodes a fresh JPEG at `vision.jpeg-quality` (0.92), dropping EXIF, GPS, comments and ICC. Reader warnings (truncated scans) and unreadable data (including CMYK) give "The image could not be read."; `OutOfMemoryError` during decode/scale maps to "Image is too large.". A semaphore (`vision.preprocess-concurrency`, 2; `vision.preprocess-wait`, 5s) bounds concurrent work; failing to get a permit throws `VisionUnavailableException` (503).
+- `VisionSeed.fromFingerprint` derives a deterministic provider seed from the stored fingerprint (sent as `seed` only when non-null; legacy jobs too). An identical request after the 60s duplicate window returns the same image unless a preference changes.
+- Provider failures carry a `VisionFailureCategory` (MODERATION / UNAVAILABLE incl. 402, 408, 429, 5xx, timeouts / GENERIC); the processor maps it to one of three constant user messages and never surfaces provider text.
+- `VisionPromptBuilder` writes an edit-style prompt ("Interior photograph of the same <room>, renovated in a/an <style> style. ...") with correct a/an articles. `negativePrompt(Preservation)`: PRESERVE_ORIGINAL and BALANCED include layout/opening terms, CREATIVE does not; all include people, distortion, watermark and blur terms. The processor re-derives the preservation from the job's saved `preferences` JSON (no migration; missing or malformed falls back to BALANCED; legacy jobs get no negative prompt). Wording and the 0.30/0.50/0.70 strengths are uncalibrated hypotheses pending real-image evaluation.
+- Deployment: for the 512 MB instance a JVM setting such as `-XX:MaxRAMPercentage=70` is recommended (Dockerfile and render.yaml untouched).

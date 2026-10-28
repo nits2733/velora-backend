@@ -24,7 +24,25 @@ public class CloudinaryMediaService implements MediaUploadService {
     @Override
     public MediaUploadResponse uploadImage(MultipartFile file, String folder) {
         validateFile(file);
+        byte[] data;
+        try {
+            data = file.getBytes();
+        } catch (IOException e) {
+            log.error("Failed to read file bytes for upload: {}", e.getMessage());
+            throw new MediaUploadException("Failed to read uploaded file", e);
+        }
+        return doUpload(data, folder);
+    }
 
+    @Override
+    public MediaUploadResponse uploadImageBytes(byte[] bytes, String contentType, String folder) {
+        if (bytes == null || bytes.length == 0) {
+            throw new MediaUploadException("Please select a valid non-empty file to upload");
+        }
+        return doUpload(bytes, folder);
+    }
+
+    private MediaUploadResponse doUpload(byte[] data, String folder) {
         String targetFolder = (folder != null && !folder.isBlank())
                 ? "velora/" + folder.trim()
                 : "velora/uploads";
@@ -39,26 +57,28 @@ public class CloudinaryMediaService implements MediaUploadService {
             );
 
             @SuppressWarnings("unchecked")
-            Map<String, Object> result = cloudinary.uploader().upload(file.getBytes(), params);
+            Map<String, Object> result = cloudinary.uploader().upload(data, params);
 
             String secureUrl = (String) result.get("secure_url");
             String publicId = (String) result.get("public_id");
             String format = (String) result.get("format");
 
-            Long bytes = result.get("bytes") instanceof Number n ? n.longValue() : file.getSize();
+            Long bytes = result.get("bytes") instanceof Number n ? n.longValue() : (long) data.length;
             Integer width = result.get("width") instanceof Number n ? n.intValue() : null;
             Integer height = result.get("height") instanceof Number n ? n.intValue() : null;
 
             log.info("Successfully uploaded media asset with public_id={} to folder={}", publicId, targetFolder);
             return new MediaUploadResponse(secureUrl, publicId, format, bytes, width, height);
 
-        } catch (IOException e) {
-            log.error("Failed to read file bytes for upload: {}", e.getMessage());
-            throw new MediaUploadException("Failed to read uploaded file", e);
         } catch (Exception e) {
             log.error("Cloudinary upload failed: {}", e.getMessage());
             throw new MediaUploadException("Failed to upload media to cloud storage", e);
         }
+    }
+
+    @Override
+    public void validate(MultipartFile file) {
+        validateFile(file);
     }
 
     private void validateFile(MultipartFile file) {

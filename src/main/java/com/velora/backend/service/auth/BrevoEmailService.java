@@ -4,6 +4,7 @@ import com.velora.backend.entity.auth.OtpPurpose;
 import com.velora.backend.exception.EmailSendException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -19,13 +20,14 @@ import java.util.Map;
  * API Keys), which is a different credential from the SMTP login/key.
  */
 @Service
+@Profile("!local")
 @Slf4j
 public class BrevoEmailService implements EmailService {
 
     private final RestClient restClient;
     private final String fromEmail;
 
-    public BrevoEmailService(RestClient brevoRestClient,
+    public BrevoEmailService(@org.springframework.beans.factory.annotation.Qualifier("brevoRestClient") RestClient brevoRestClient,
                               @Value("${app.brevo.from-email:onboarding@brevo.com}") String fromEmail) {
         this.restClient = brevoRestClient;
         this.fromEmail = fromEmail;
