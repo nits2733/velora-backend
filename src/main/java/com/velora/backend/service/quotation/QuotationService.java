@@ -86,11 +86,15 @@ public class QuotationService {
         return respond(customerId, bookingId, QuotationStatus.REJECTED);
     }
 
+    /**
+     * A customer never sees a {@code DRAFT}: the professional is still working on it and has not
+     * offered it yet. Professionals see their own drafts.
+     */
     @Transactional(readOnly = true)
     public PageResponse<QuotationResponse> getQuotationsForUser(Long userId, Role role, Pageable pageable) {
         Page<Quotation> quotations = role == Role.PROFESSIONAL
                 ? quotationRepository.findByBooking_ProfessionalId(userId, pageable)
-                : quotationRepository.findByBooking_CustomerId(userId, pageable);
+                : quotationRepository.findByBooking_CustomerIdAndStatusNot(userId, QuotationStatus.DRAFT, pageable);
 
         return PageResponse.from(quotations.map(quotationMapper::toResponse));
     }
@@ -99,6 +103,10 @@ public class QuotationService {
     public QuotationResponse get(Long userId, Long bookingId) {
         Quotation quotation = findQuotationByBooking(bookingId);
         assertParticipant(userId, quotation.getBooking());
+        if (quotation.getStatus() == QuotationStatus.DRAFT && quotation.getBooking().getCustomer().getId().equals(userId)) {
+            // Same error as "no quotation yet", so a customer cannot tell a draft exists.
+            throw quotationNotFound(bookingId);
+        }
         return quotationMapper.toResponse(quotation);
     }
 
@@ -167,6 +175,10 @@ public class QuotationService {
 
     private Quotation findQuotationByBooking(Long bookingId) {
         return quotationRepository.findByBookingId(bookingId)
-                .orElseThrow(() -> new ResourceNotFoundException("No quotation found for booking: " + bookingId));
+                .orElseThrow(() -> quotationNotFound(bookingId));
+    }
+
+    private ResourceNotFoundException quotationNotFound(Long bookingId) {
+        return new ResourceNotFoundException("No quotation found for booking: " + bookingId);
     }
 }

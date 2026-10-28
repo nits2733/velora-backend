@@ -21,6 +21,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -30,6 +33,8 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -197,5 +202,57 @@ class QuotationServiceTest {
 
         assertThatThrownBy(() -> quotationService.get(1L, 10L))
                 .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void getHidesDraftFromTheCustomerWithTheSameErrorAsNoQuotation() {
+        Quotation draft = Quotation.builder()
+                .id(60L).booking(booking).status(QuotationStatus.DRAFT).totalAmount(BigDecimal.ZERO).build();
+        when(quotationRepository.findByBookingId(10L)).thenReturn(Optional.of(draft));
+
+        assertThatThrownBy(() -> quotationService.get(1L, 10L))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessage("No quotation found for booking: 10");
+    }
+
+    @Test
+    void getStillShowsTheDraftToTheAssignedProfessional() {
+        Quotation draft = Quotation.builder()
+                .id(61L).booking(booking).status(QuotationStatus.DRAFT).totalAmount(BigDecimal.ZERO).build();
+        when(quotationRepository.findByBookingId(10L)).thenReturn(Optional.of(draft));
+
+        assertThat(quotationService.get(2L, 10L).status()).isEqualTo(QuotationStatus.DRAFT);
+    }
+
+    @Test
+    void getShowsASentQuotationToTheCustomer() {
+        Quotation sent = Quotation.builder()
+                .id(62L).booking(booking).status(QuotationStatus.SENT).totalAmount(new BigDecimal("1500")).build();
+        when(quotationRepository.findByBookingId(10L)).thenReturn(Optional.of(sent));
+
+        assertThat(quotationService.get(1L, 10L).status()).isEqualTo(QuotationStatus.SENT);
+    }
+
+    @Test
+    void customerListExcludesDraftsAtTheQueryLevel() {
+        Pageable pageable = PageRequest.of(0, 20);
+        when(quotationRepository.findByBooking_CustomerIdAndStatusNot(1L, QuotationStatus.DRAFT, pageable))
+                .thenReturn(new PageImpl<>(List.of()));
+
+        quotationService.getQuotationsForUser(1L, Role.CUSTOMER, pageable);
+
+        verify(quotationRepository).findByBooking_CustomerIdAndStatusNot(1L, QuotationStatus.DRAFT, pageable);
+        verify(quotationRepository, never()).findByBooking_CustomerId(any(), any());
+    }
+
+    @Test
+    void professionalListStillIncludesDrafts() {
+        Pageable pageable = PageRequest.of(0, 20);
+        when(quotationRepository.findByBooking_ProfessionalId(2L, pageable)).thenReturn(new PageImpl<>(List.of()));
+
+        quotationService.getQuotationsForUser(2L, Role.PROFESSIONAL, pageable);
+
+        verify(quotationRepository).findByBooking_ProfessionalId(2L, pageable);
+        verify(quotationRepository, never()).findByBooking_CustomerIdAndStatusNot(any(), any(), any());
     }
 }
