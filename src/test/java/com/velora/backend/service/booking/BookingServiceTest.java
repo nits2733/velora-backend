@@ -103,7 +103,7 @@ class BookingServiceTest {
                 .status(BookingStatus.PENDING).scheduledAt(Instant.now()).build();
         when(bookingRepository.findById(5L)).thenReturn(Optional.of(booking));
 
-        assertThatThrownBy(() -> bookingService.cancel(999L, 5L))
+        assertThatThrownBy(() -> bookingService.cancel(999L, 5L, null))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessage("Booking not found: 5");
         verify(bookingRepository, never()).save(any());
@@ -356,7 +356,7 @@ class BookingServiceTest {
                 .status(BookingStatus.COMPLETED).scheduledAt(Instant.now()).build();
         when(bookingRepository.findById(6L)).thenReturn(Optional.of(booking));
 
-        assertThatThrownBy(() -> bookingService.cancel(1L, 6L))
+        assertThatThrownBy(() -> bookingService.cancel(1L, 6L, null))
                 .isInstanceOf(InvalidStateTransitionException.class);
     }
 
@@ -461,9 +461,65 @@ class BookingServiceTest {
         when(bookingRepository.findById(12L)).thenReturn(Optional.of(booking));
         when(bookingRepository.save(any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        BookingResponse response = bookingService.cancel(1L, 12L);
+        BookingResponse response = bookingService.cancel(1L, 12L, null);
 
         assertThat(response.status()).isEqualTo(BookingStatus.CANCELLED);
+        assertThat(response.cancellationReason()).isNull();
+    }
+
+    private Booking pendingBookingOf21() {
+        Booking booking = Booking.builder()
+                .id(21L).customer(customer).professional(professional).requestType(RequestType.FULL_HOME_PROJECT)
+                .status(BookingStatus.PENDING).scheduledAt(Instant.now()).build();
+        when(bookingRepository.findById(21L)).thenReturn(Optional.of(booking));
+        return booking;
+    }
+
+    @Test
+    void cancelStoresTheReasonTrimmed() {
+        Booking booking = pendingBookingOf21();
+        when(bookingRepository.save(any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        BookingResponse response = bookingService.cancel(1L, 21L, "  Changed my plans  ");
+
+        assertThat(booking.getCancellationReason()).isEqualTo("Changed my plans");
+        assertThat(response.cancellationReason()).isEqualTo("Changed my plans");
+    }
+
+    @Test
+    void cancelTreatsABlankReasonAsNoReason() {
+        Booking booking = pendingBookingOf21();
+        when(bookingRepository.save(any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        bookingService.cancel(1L, 21L, "   ");
+
+        assertThat(booking.getCancellationReason()).isNull();
+    }
+
+    @Test
+    void theCancellationReasonIsShownToTheCustomerAndAdminsButNotTheAssignedProfessional() {
+        Booking booking = pendingBookingOf21();
+        booking.setStatus(BookingStatus.CANCELLED);
+        booking.setCancellationReason("Found another provider");
+
+        assertThat(bookingService.getById(1L, Role.CUSTOMER, 21L).cancellationReason()).isEqualTo("Found another provider");
+        assertThat(bookingService.getById(999L, Role.ADMIN, 21L).cancellationReason()).isEqualTo("Found another provider");
+        assertThat(bookingService.getById(2L, Role.PROFESSIONAL, 21L).cancellationReason()).isNull();
+    }
+
+    @Test
+    void theQuotationValidityDateFollowsTheQuotationsVisibilityToTheCustomer() {
+        Booking booking = pendingBookingOf21();
+        Instant until = Instant.now().plus(7, ChronoUnit.DAYS);
+        Quotation sent = Quotation.builder().id(91L).booking(booking).status(QuotationStatus.SENT)
+                .totalAmount(new BigDecimal("500")).validUntil(until).build();
+        when(quotationRepository.findByBookingIdIn(List.of(21L))).thenReturn(List.of(sent));
+
+        assertThat(bookingService.getById(1L, Role.CUSTOMER, 21L).quotationValidUntil()).isEqualTo(until);
+
+        sent.setStatus(QuotationStatus.DRAFT);
+        assertThat(bookingService.getById(1L, Role.CUSTOMER, 21L).quotationValidUntil()).isNull();
+        assertThat(bookingService.getById(2L, Role.PROFESSIONAL, 21L).quotationValidUntil()).isEqualTo(until);
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.velora.backend.controller.quotation;
 
+import com.velora.backend.dto.booking.ReasonRequest;
 import com.velora.backend.dto.quotation.QuotationResponse;
 import com.velora.backend.dto.quotation.SaveQuotationRequest;
 import com.velora.backend.security.UserPrincipal;
@@ -62,9 +63,11 @@ public class QuotationController {
 
     @PatchMapping("/reject")
     @PreAuthorize("hasRole('CUSTOMER')")
-    @Operation(summary = "Reject a sent quotation (customer only)")
+    @Operation(summary = "Reject a sent quotation (customer only); the body with an optional reason may be omitted")
     public ResponseEntity<QuotationResponse> reject(@AuthenticationPrincipal UserPrincipal principal,
-                                                     @PathVariable Long bookingId) {
-        return ResponseEntity.ok(quotationService.reject(principal.getId(), bookingId));
+                                                     @PathVariable Long bookingId,
+                                                     @Valid @RequestBody(required = false) ReasonRequest request) {
+        String reason = request == null ? null : request.reason();
+        return ResponseEntity.ok(quotationService.reject(principal.getId(), bookingId, reason));
     }
 }

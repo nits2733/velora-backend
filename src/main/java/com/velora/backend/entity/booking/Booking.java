@@ -95,6 +95,10 @@ public class Booking {
     @Column(length = 1000)
     private String notes;
 
+    /** Optional, written by the customer when cancelling. Never shown to the assigned professional. */
+    @Column(name = "cancellation_reason", length = 300)
+    private String cancellationReason;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;

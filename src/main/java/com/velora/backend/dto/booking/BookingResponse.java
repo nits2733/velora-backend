@@ -15,6 +15,8 @@ import java.util.List;
  * {@code quotationStatus} and {@code quotationTotal} are null when there is no quotation, and also
  * when it is still a {@code DRAFT} and the viewer is the customer (a draft is not offered yet).
  * {@code reviewed} is true once the customer has reviewed this booking.
+ * {@code quotationValidUntil} is informational and follows the quotation's visibility.
+ * {@code cancellationReason} is hidden from the assigned professional.
  */
 public record BookingResponse(
         Long id,
@@ -38,6 +40,8 @@ public record BookingResponse(
         Instant updatedAt,
         QuotationStatus quotationStatus,
         BigDecimal quotationTotal,
-        boolean reviewed
+        boolean reviewed,
+        Instant quotationValidUntil,
+        String cancellationReason
 ) {
 }

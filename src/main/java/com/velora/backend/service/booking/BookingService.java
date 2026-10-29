@@ -26,6 +26,7 @@ import com.velora.backend.repository.quotation.QuotationRepository;
 import com.velora.backend.repository.review.ReviewRepository;
 import com.velora.backend.repository.user.UserRepository;
 import com.velora.backend.util.PageResponse;
+import com.velora.backend.util.Text;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -250,7 +251,7 @@ public class BookingService {
     }
 
     @Transactional
-    public BookingResponse cancel(Long customerId, Long bookingId) {
+    public BookingResponse cancel(Long customerId, Long bookingId, String reason) {
         Booking booking = findBooking(bookingId);
 
         if (!booking.getCustomer().getId().equals(customerId)) {
@@ -264,6 +265,7 @@ public class BookingService {
 
         BookingStatus previousStatus = booking.getStatus();
         booking.setStatus(BookingStatus.CANCELLED);
+        booking.setCancellationReason(Text.trimToNull(reason));
         booking = bookingRepository.save(booking);
         eventRecorder.recordCancelled(booking, previousStatus);
         return toResponse(booking, customerId);
@@ -334,10 +336,14 @@ public class BookingService {
                     && quotation.getStatus() == QuotationStatus.DRAFT
                     && booking.getCustomer().getId().equals(viewerId);
             boolean visible = quotation != null && !hidden;
+            boolean viewerIsProfessional = booking.getProfessional() != null
+                    && booking.getProfessional().getId().equals(viewerId);
             return bookingMapper.toResponse(booking,
                     visible ? quotation.getStatus() : null,
                     visible ? quotation.getTotalAmount() : null,
-                    reviewed.contains(booking.getId()));
+                    visible ? quotation.getValidUntil() : null,
+                    reviewed.contains(booking.getId()),
+                    viewerIsProfessional ? null : booking.getCancellationReason());
         }).toList();
     }
 

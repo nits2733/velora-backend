@@ -8,6 +8,7 @@ import com.velora.backend.dto.booking.BookingResponse;
 import com.velora.backend.dto.booking.BookingStatusUpdateRequest;
 import com.velora.backend.dto.booking.BookingTimelineEventResponse;
 import com.velora.backend.dto.booking.ProfessionalMatchResponse;
+import com.velora.backend.dto.booking.ReasonRequest;
 import com.velora.backend.entity.booking.BookingStatus;
 import com.velora.backend.entity.user.Role;
 import com.velora.backend.security.UserPrincipal;
@@ -124,10 +125,13 @@ public class BookingController {
 
     @PatchMapping("/{id}/cancel")
     @PreAuthorize("hasRole('CUSTOMER')")
-    @Operation(summary = "Cancel a booking (customer only, before completion)")
+    @Operation(summary = "Cancel a booking (customer only, before completion); the body with an optional "
+            + "reason may be omitted")
     public ResponseEntity<BookingResponse> cancel(@AuthenticationPrincipal UserPrincipal principal,
-                                                   @PathVariable Long id) {
-        return ResponseEntity.ok(bookingService.cancel(principal.getId(), id));
+                                                   @PathVariable Long id,
+                                                   @Valid @RequestBody(required = false) ReasonRequest request) {
+        String reason = request == null ? null : request.reason();
+        return ResponseEntity.ok(bookingService.cancel(principal.getId(), id, reason));
     }
 
     @PatchMapping("/{id}/status")

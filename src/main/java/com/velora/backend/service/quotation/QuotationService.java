@@ -16,6 +16,7 @@ import com.velora.backend.mapper.quotation.QuotationMapper;
 import com.velora.backend.repository.booking.BookingRepository;
 import com.velora.backend.repository.quotation.QuotationRepository;
 import com.velora.backend.util.PageResponse;
+import com.velora.backend.util.Text;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -54,6 +55,7 @@ public class QuotationService {
         }
 
         quotation.setNotes(request.notes());
+        quotation.setValidUntil(request.validUntil());
         replaceLineItems(quotation, request.lineItems());
 
         return quotationMapper.toResponse(quotationRepository.save(quotation));
@@ -81,12 +83,13 @@ public class QuotationService {
 
     @Transactional
     public QuotationResponse accept(Long customerId, Long bookingId) {
-        return respond(customerId, bookingId, QuotationStatus.ACCEPTED);
+        return respond(customerId, bookingId, QuotationStatus.ACCEPTED, null);
     }
 
+    /** @param reason optional; why the customer is declining */
     @Transactional
-    public QuotationResponse reject(Long customerId, Long bookingId) {
-        return respond(customerId, bookingId, QuotationStatus.REJECTED);
+    public QuotationResponse reject(Long customerId, Long bookingId, String reason) {
+        return respond(customerId, bookingId, QuotationStatus.REJECTED, reason);
     }
 
     /**
@@ -115,7 +118,7 @@ public class QuotationService {
         return quotationMapper.toResponse(quotation);
     }
 
-    private QuotationResponse respond(Long customerId, Long bookingId, QuotationStatus newStatus) {
+    private QuotationResponse respond(Long customerId, Long bookingId, QuotationStatus newStatus, String reason) {
         Quotation quotation = findQuotationByBooking(bookingId);
 
         if (!quotation.getBooking().getCustomer().getId().equals(customerId)) {
@@ -126,6 +129,9 @@ public class QuotationService {
         }
 
         quotation.setStatus(newStatus);
+        if (newStatus == QuotationStatus.REJECTED) {
+            quotation.setRejectionReason(Text.trimToNull(reason));
+        }
         QuotationResponse response = quotationMapper.toResponse(quotationRepository.save(quotation));
         if (newStatus == QuotationStatus.ACCEPTED) {
             eventRecorder.recordQuotationAccepted(quotation.getBooking());

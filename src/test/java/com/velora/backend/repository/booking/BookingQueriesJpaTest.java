@@ -197,4 +197,22 @@ class BookingQueriesJpaTest {
         assertThat(bookingRepository.findByProfessionalIdAndStatusIn(professional.getId(), wanted, pageable).getContent())
                 .hasSize(2);
     }
+
+    @Test
+    void theReasonAndValidityColumnsRoundTrip() {
+        Booking booking = booking(customer, BookingStatus.CANCELLED);
+        booking.setCancellationReason("Changed my plans");
+        Quotation quotation = quotation(booking, QuotationStatus.REJECTED);
+        Instant until = Instant.parse("2027-01-15T10:00:00Z");
+        quotation.setRejectionReason("Over my budget");
+        quotation.setValidUntil(until);
+        em.flush();
+        em.clear();
+
+        assertThat(bookingRepository.findById(booking.getId()).orElseThrow().getCancellationReason())
+                .isEqualTo("Changed my plans");
+        Quotation reloaded = quotationRepository.findByBookingId(booking.getId()).orElseThrow();
+        assertThat(reloaded.getRejectionReason()).isEqualTo("Over my budget");
+        assertThat(reloaded.getValidUntil()).isEqualTo(until);
+    }
 }

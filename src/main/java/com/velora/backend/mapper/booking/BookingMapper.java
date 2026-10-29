@@ -15,6 +15,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 
 @Component
 @RequiredArgsConstructor
@@ -24,7 +25,7 @@ public class BookingMapper {
     private final PortfolioItemMapper portfolioItemMapper;
 
     public BookingResponse toResponse(Booking booking, QuotationStatus quotationStatus, BigDecimal quotationTotal,
-                                      boolean reviewed) {
+                                      Instant quotationValidUntil, boolean reviewed, String cancellationReason) {
         return new BookingResponse(
                 booking.getId(),
                 booking.getRequestType(),
@@ -47,7 +48,9 @@ public class BookingMapper {
                 booking.getUpdatedAt(),
                 quotationStatus,
                 quotationTotal,
-                reviewed
+                reviewed,
+                quotationValidUntil,
+                cancellationReason
         );
     }
 

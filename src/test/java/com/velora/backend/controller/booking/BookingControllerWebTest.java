@@ -205,4 +205,34 @@ class BookingControllerWebTest {
 
         verifyNoInteractions(bookingService);
     }
+
+    @Test
+    void cancelPassesTheOptionalReasonThrough() throws Exception {
+        mockMvc.perform(patch("/api/bookings/5/cancel")
+                        .with(as(7L, Role.CUSTOMER))
+                        .contentType("application/json")
+                        .content("{\"reason\":\"Changed my plans\"}"))
+                .andExpect(status().isOk());
+
+        verify(bookingService).cancel(7L, 5L, "Changed my plans");
+    }
+
+    @Test
+    void cancelStillWorksWithNoBodyAtAll() throws Exception {
+        mockMvc.perform(patch("/api/bookings/5/cancel").with(as(7L, Role.CUSTOMER)))
+                .andExpect(status().isOk());
+
+        verify(bookingService).cancel(7L, 5L, null);
+    }
+
+    @Test
+    void cancelRejectsAReasonLongerThanTheColumn() throws Exception {
+        mockMvc.perform(patch("/api/bookings/5/cancel")
+                        .with(as(7L, Role.CUSTOMER))
+                        .contentType("application/json")
+                        .content("{\"reason\":\"" + "x".repeat(301) + "\"}"))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(bookingService);
+    }
 }

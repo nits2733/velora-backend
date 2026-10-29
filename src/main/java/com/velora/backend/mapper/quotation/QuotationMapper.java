@@ -18,7 +18,9 @@ public class QuotationMapper {
                 quotation.getTotalAmount(),
                 quotation.getLineItems().stream().map(this::toLineItemResponse).toList(),
                 quotation.getCreatedAt(),
-                quotation.getUpdatedAt()
+                quotation.getUpdatedAt(),
+                quotation.getRejectionReason(),
+                quotation.getValidUntil()
         );
     }
 

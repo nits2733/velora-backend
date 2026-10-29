@@ -59,6 +59,14 @@ public class Quotation {
     @Column(length = 2000)
     private String notes;
 
+    /** Optional, written by the customer when declining. Visible to both participants. */
+    @Column(name = "rejection_reason", length = 300)
+    private String rejectionReason;
+
+    /** Until when the prices hold. Informational: acceptance is not blocked after this date. */
+    @Column(name = "valid_until")
+    private Instant validUntil;
+
     @Builder.Default
     @OneToMany(mappedBy = "quotation", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("sortOrder ASC")

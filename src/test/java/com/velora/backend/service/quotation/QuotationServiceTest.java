@@ -69,7 +69,7 @@ class QuotationServiceTest {
     void saveDraftRejectsNonAssignedProfessional() {
         when(bookingRepository.findById(10L)).thenReturn(Optional.of(booking));
 
-        SaveQuotationRequest request = new SaveQuotationRequest(null, List.of());
+        SaveQuotationRequest request = new SaveQuotationRequest(null, List.of(), null);
 
         assertThatThrownBy(() -> quotationService.saveDraft(999L, 10L, request))
                 .isInstanceOf(ResourceNotFoundException.class)
@@ -91,7 +91,7 @@ class QuotationServiceTest {
         SaveQuotationRequest request = new SaveQuotationRequest("Scope notes", List.of(
                 new QuotationLineItemRequest("Modular kitchen", null, null, null, new BigDecimal("50000.00")),
                 new QuotationLineItemRequest("Painting", new BigDecimal("500"), "sqft", new BigDecimal("20.00"), new BigDecimal("10000.00"))
-        ));
+        ), null);
 
         QuotationResponse response = quotationService.saveDraft(2L, 10L, request);
 
@@ -107,7 +107,7 @@ class QuotationServiceTest {
         when(bookingRepository.findById(10L)).thenReturn(Optional.of(booking));
         when(quotationRepository.findByBookingId(10L)).thenReturn(Optional.of(sent));
 
-        SaveQuotationRequest request = new SaveQuotationRequest(null, List.of());
+        SaveQuotationRequest request = new SaveQuotationRequest(null, List.of(), null);
 
         assertThatThrownBy(() -> quotationService.saveDraft(2L, 10L, request))
                 .isInstanceOf(InvalidStateTransitionException.class);
@@ -168,7 +168,7 @@ class QuotationServiceTest {
                 .id(58L).booking(booking).status(QuotationStatus.SENT).totalAmount(BigDecimal.ZERO).build();
         when(quotationRepository.findByBookingId(10L)).thenReturn(Optional.of(sent));
 
-        assertThatThrownBy(() -> quotationService.reject(999L, 10L))
+        assertThatThrownBy(() -> quotationService.reject(999L, 10L, null))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessage("No quotation found for booking: 10");
     }
@@ -215,6 +215,58 @@ class QuotationServiceTest {
         QuotationResponse response = quotationService.accept(1L, 10L);
 
         assertThat(response.status()).isEqualTo(QuotationStatus.ACCEPTED);
+        assertThat(response.rejectionReason()).isNull();
+    }
+
+    private Quotation sentQuotationOn10() {
+        Quotation sent = Quotation.builder()
+                .id(70L).booking(booking).status(QuotationStatus.SENT).totalAmount(new BigDecimal("2000")).build();
+        when(quotationRepository.findByBookingId(10L)).thenReturn(Optional.of(sent));
+        when(quotationRepository.save(any(Quotation.class))).thenAnswer(inv -> inv.getArgument(0));
+        return sent;
+    }
+
+    @Test
+    void rejectStoresTheReasonTrimmedAndBothParticipantsCanReadIt() {
+        Quotation sent = sentQuotationOn10();
+
+        QuotationResponse response = quotationService.reject(1L, 10L, "  Over my budget ");
+
+        assertThat(response.status()).isEqualTo(QuotationStatus.REJECTED);
+        assertThat(response.rejectionReason()).isEqualTo("Over my budget");
+        assertThat(sent.getRejectionReason()).isEqualTo("Over my budget");
+        assertThat(quotationService.get(1L, 10L).rejectionReason()).isEqualTo("Over my budget");
+        assertThat(quotationService.get(2L, 10L).rejectionReason()).isEqualTo("Over my budget");
+    }
+
+    @Test
+    void rejectWithABlankReasonStoresNone() {
+        Quotation sent = sentQuotationOn10();
+
+        quotationService.reject(1L, 10L, "   ");
+
+        assertThat(sent.getRejectionReason()).isNull();
+    }
+
+    @Test
+    void acceptNeverStoresAReason() {
+        Quotation sent = sentQuotationOn10();
+
+        quotationService.accept(1L, 10L);
+
+        assertThat(sent.getRejectionReason()).isNull();
+    }
+
+    @Test
+    void saveDraftStoresTheValidityDate() {
+        when(bookingRepository.findById(10L)).thenReturn(Optional.of(booking));
+        when(quotationRepository.findByBookingId(10L)).thenReturn(Optional.empty());
+        when(quotationRepository.save(any(Quotation.class))).thenAnswer(inv -> inv.getArgument(0));
+        Instant until = Instant.now().plusSeconds(86_400);
+
+        QuotationResponse response = quotationService.saveDraft(2L, 10L, new SaveQuotationRequest(null, List.of(), until));
+
+        assertThat(response.validUntil()).isEqualTo(until);
     }
 
     @Test
@@ -224,7 +276,7 @@ class QuotationServiceTest {
                 .status(BookingStatus.PENDING_ASSIGNMENT).scheduledAt(Instant.now()).build();
         when(bookingRepository.findById(20L)).thenReturn(Optional.of(unassigned));
 
-        SaveQuotationRequest request = new SaveQuotationRequest(null, List.of());
+        SaveQuotationRequest request = new SaveQuotationRequest(null, List.of(), null);
 
         assertThatThrownBy(() -> quotationService.saveDraft(2L, 20L, request))
                 .isInstanceOf(ResourceNotFoundException.class)

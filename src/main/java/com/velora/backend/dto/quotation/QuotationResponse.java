@@ -14,6 +14,8 @@ public record QuotationResponse(
         BigDecimal totalAmount,
         List<QuotationLineItemResponse> lineItems,
         Instant createdAt,
-        Instant updatedAt
+        Instant updatedAt,
+        String rejectionReason,
+        Instant validUntil
 ) {
 }
